@@ -1,0 +1,85 @@
+name: Build Android APK
+
+on:
+  push:
+    branches: [ "**" ]
+    tags:
+      - "v*"
+  pull_request:
+    branches: [ "**" ]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: write
+  checks: write
+  packages: write
+  pull-requests: write
+  statuses: write
+
+jobs:
+  build:
+    name: Build APK
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      actions: write
+      checks: write
+      packages: write
+      pull-requests: write
+      statuses: write
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v5
+        with:
+          distribution: "temurin"
+          java-version: "21"
+
+      - name: Accept Android SDK Licenses
+        run: |
+          mkdir -p "$ANDROID_HOME/licenses"
+          echo -e "\n8933bad161af4178b1185d1a37fbf41ea5269c55\nd56f5187479451eabf01fb78af6dfcb131a6481e\n24333f8a63b6825ea9c5514f83c2829b004d1fee" > "$ANDROID_HOME/licenses/android-sdk-license"
+          echo -e "\n84831b9409646a918e30573bab4c9c91346d8abd" > "$ANDROID_HOME/licenses/android-sdk-preview-license"
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Make Gradlew Executable
+        run: chmod +x ./gradlew
+
+      - name: Ensure Debug Keystore
+        run: |
+          if [ -f "debug.keystore.base64" ]; then
+            base64 -d debug.keystore.base64 > debug.keystore
+          else
+            keytool -genkeypair -v -keystore debug.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US"
+          fi
+
+      - name: Build Debug APK
+        run: ./gradlew assembleDebug --stacktrace --no-daemon
+
+      - name: Rename APK for Clarity
+        run: |
+          mkdir -p build-artifacts
+          cp app/build/outputs/apk/debug/app-debug.apk build-artifacts/MiExplorer-v1.0.0.apk
+
+      - name: Upload APK Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: MiExplorer-APK
+          path: build-artifacts/MiExplorer-v1.0.0.apk
+          retention-days: 30
+
+      - name: Create GitHub Release (On Tag)
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: build-artifacts/MiExplorer-v1.0.0.apk
+          name: Mi Explorer ${{ github.ref_name }}
+          draft: false
+          prerelease: false
+          generate_release_notes: true
