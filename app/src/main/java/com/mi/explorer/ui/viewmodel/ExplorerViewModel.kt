@@ -303,7 +303,9 @@ class ExplorerViewModel(application: Application) : AndroidViewModel(application
     val activeNetworkDrive: StateFlow<NetworkDrive?> = _activeNetworkDrive.asStateFlow()
     private val _remoteFiles = MutableStateFlow<List<RemoteFileItem>>(emptyList())
     val remoteFiles: StateFlow<List<RemoteFileItem>> = _remoteFiles.asStateFlow()
+    val currentRemotePath = MutableStateFlow("/")
     val isTestingNetworkDrive = MutableStateFlow(false)
+    val isScanningLan = MutableStateFlow(false)
 
     // 3. Fast Share (Direct P2P Offline Wi-Fi Transfer)
     val fastShareRepository = FastShareRepository(application)
@@ -389,6 +391,17 @@ class ExplorerViewModel(application: Application) : AndroidViewModel(application
 
     fun handleBackPress(): Boolean {
         if (_currentScreen.value == Screen.MAIN) {
+            if (isDualPaneActive.value && activePaneIndex.value == 1) {
+                val paneB = _paneBState.value
+                if (paneB.selectedItems.isNotEmpty()) {
+                    clearSelectionPaneB()
+                    return true
+                }
+                if (paneB.backStack.isNotEmpty()) {
+                    backPaneB()
+                    return true
+                }
+            }
             val state = _storageState.value
             if (state.isSelectionMode) {
                 clearSelection()
@@ -403,6 +416,13 @@ class ExplorerViewModel(application: Application) : AndroidViewModel(application
                 return true
             }
             return false
+        }
+
+        if (_currentScreen.value == Screen.NETWORK_DRIVES && _activeNetworkDrive.value != null) {
+            if (!navigateUpRemoteFolder()) {
+                disconnectNetworkDrive()
+            }
+            return true
         }
 
         if (screenBackStack.isNotEmpty()) {
@@ -845,6 +865,16 @@ class ExplorerViewModel(application: Application) : AndroidViewModel(application
         }
     }
 
+    fun refreshCategory() {
+        val category = _categoryViewState.value.category
+        if (_currentScreen.value == Screen.CATEGORY_VIEW) {
+            viewModelScope.launch {
+                val items = fileRepository.getCategoryFiles(category)
+                _categoryViewState.update { it.copy(items = items, isLoading = false) }
+            }
+        }
+    }
+
     // Social Media Hub
     private val _socialHubState = MutableStateFlow(SocialHubState())
     val socialHubState: StateFlow<SocialHubState> = _socialHubState.asStateFlow()
@@ -879,7 +909,19 @@ class ExplorerViewModel(application: Application) : AndroidViewModel(application
     // Text & HTML Editor/Viewer
     fun openTextEditor(file: File) {
         viewModelScope.launch {
-            val content = fileRepository.readText(file).getOrDefault("")
+            val directRead = fileRepository.readText(file).getOrNull()
+            val rawContent = if (directRead != null) {
+                directRead
+            } else {
+                com.mi.explorer.utils.RootHelper.readFileWithRoot(file).getOrDefault("")
+            }
+            // Cap large files to prevent Compose OOM / ANR freeze on huge log files
+            val maxSafeChars = 150_000
+            val content = if (rawContent.length > maxSafeChars) {
+                rawContent.take(maxSafeChars) + "\n\n... [File truncated at 150 KB for smooth editing]"
+            } else {
+                rawContent
+            }
             val isHtml = file.extension.lowercase() in listOf("html", "htm")
             _textEditorState.value = TextEditorState(
                 file = file,
@@ -1209,9 +1251,31 @@ class ExplorerViewModel(application: Application) : AndroidViewModel(application
         return valid
     }
 
+    fun resetVaultPinWithAnswer(answer: String, newPin: String): Boolean {
+        val success = vaultRepository.resetPinWithSecurityAnswer(answer, newPin)
+        if (success) {
+            isVaultPinSet.value = true
+            isVaultUnlocked.value = true
+            loadVaultFiles()
+        }
+        return success
+    }
+
+    fun openVaultFilePreview(item: FileItem, onReady: (FileItem) -> Unit) {
+        viewModelScope.launch {
+            val decrypted = vaultRepository.decryptToTempCacheFile(item.file)
+            if (decrypted != null && decrypted.exists()) {
+                onReady(FileItem(decrypted))
+            } else {
+                showMessage("Could not decrypt vault file for preview")
+            }
+        }
+    }
+
     fun lockVault() {
         isVaultUnlocked.value = false
         _vaultFiles.value = emptyList()
+        vaultRepository.clearTempPreviewCache()
         showMessage("Vault locked")
     }
 
@@ -1859,19 +1923,66 @@ class ExplorerViewModel(application: Application) : AndroidViewModel(application
     fun connectNetworkDrive(drive: NetworkDrive) {
         viewModelScope.launch {
             _activeNetworkDrive.value = drive
-            refreshRemoteFiles()
+            val initialPath = drive.remotePath.ifBlank { "/" }
+            currentRemotePath.value = initialPath
+            _remoteFiles.value = networkStorageRepository.listRemoteFiles(drive, initialPath)
         }
     }
 
     fun disconnectNetworkDrive() {
         _activeNetworkDrive.value = null
+        currentRemotePath.value = "/"
         _remoteFiles.value = emptyList()
     }
 
     fun refreshRemoteFiles() {
         val drive = _activeNetworkDrive.value ?: return
         viewModelScope.launch {
-            _remoteFiles.value = networkStorageRepository.listRemoteFiles(drive, drive.remotePath)
+            _remoteFiles.value = networkStorageRepository.listRemoteFiles(drive, currentRemotePath.value)
+        }
+    }
+
+    fun navigateRemoteFolder(folder: RemoteFileItem) {
+        val drive = _activeNetworkDrive.value ?: return
+        val normalized = if (folder.path.startsWith("/")) folder.path else "/${folder.path}"
+        currentRemotePath.value = normalized
+        viewModelScope.launch {
+            _remoteFiles.value = networkStorageRepository.listRemoteFiles(drive, normalized)
+        }
+    }
+
+    fun navigateUpRemoteFolder(): Boolean {
+        val drive = _activeNetworkDrive.value ?: return false
+        val curr = currentRemotePath.value.trimEnd('/')
+        val rootPath = drive.remotePath.trimEnd('/')
+        if (curr.isEmpty() || curr == "/" || curr == rootPath) {
+            return false
+        }
+        val parent = curr.substringBeforeLast('/', "").ifEmpty { "/" }
+        currentRemotePath.value = parent
+        viewModelScope.launch {
+            _remoteFiles.value = networkStorageRepository.listRemoteFiles(drive, parent)
+        }
+        return true
+    }
+
+    fun scanLanForNetworkDrives() {
+        if (isScanningLan.value) return
+        viewModelScope.launch {
+            isScanningLan.value = true
+            showMessage("Scanning local Wi-Fi for SMB / FTP / WebDAV servers...")
+            val localIp = fastShareRepository.getLocalIpAddress()
+            val discovered = networkStorageRepository.scanLanServers(localIp)
+            isScanningLan.value = false
+            if (discovered.isNotEmpty()) {
+                for (d in discovered) {
+                    networkStorageRepository.saveDrive(d)
+                }
+                loadNetworkDrives()
+                showMessage("Found and added ${discovered.size} server(s) on LAN!")
+            } else {
+                showMessage("No active SMB/FTP/WebDAV servers found on local subnet ($localIp)")
+            }
         }
     }
 
@@ -2008,8 +2119,23 @@ class ExplorerViewModel(application: Application) : AndroidViewModel(application
     private fun loadDirectoryPaneB(dir: File) {
         viewModelScope.launch {
             val items = fileRepository.listFiles(dir, showHidden = false, sortType = SortType.NAME_ASC)
-            _paneBState.update { it.copy(items = items) }
+            _paneBState.update { it.copy(items = items, selectedItems = emptySet()) }
         }
+    }
+
+    fun toggleSelectPaneB(item: FileItem) {
+        _paneBState.update { state ->
+            val updated = if (state.selectedItems.contains(item)) {
+                state.selectedItems - item
+            } else {
+                state.selectedItems + item
+            }
+            state.copy(selectedItems = updated)
+        }
+    }
+
+    fun clearSelectionPaneB() {
+        _paneBState.update { it.copy(selectedItems = emptySet()) }
     }
 
     fun copyPaneAtoB() {
@@ -2024,6 +2150,19 @@ class ExplorerViewModel(application: Application) : AndroidViewModel(application
         }
     }
 
+    fun movePaneAtoB() {
+        val sourceItems = _storageState.value.selectedItems.toList()
+        if (sourceItems.isEmpty()) return
+        val targetDir = _paneBState.value.currentDir
+        viewModelScope.launch {
+            fileRepository.move(sourceItems, targetDir)
+            showMessage("Moved ${sourceItems.size} items to Pane B (${targetDir.name})")
+            clearSelection()
+            refreshCurrentDirectory()
+            loadDirectoryPaneB(targetDir)
+        }
+    }
+
     fun copyPaneBtoA() {
         val sourceItems = _paneBState.value.selectedItems.toList()
         if (sourceItems.isEmpty()) return
@@ -2032,6 +2171,19 @@ class ExplorerViewModel(application: Application) : AndroidViewModel(application
             fileRepository.copy(sourceItems, targetDir)
             showMessage("Copied ${sourceItems.size} items to Pane A (${targetDir.name})")
             _paneBState.update { it.copy(selectedItems = emptySet()) }
+            refreshCurrentDirectory()
+        }
+    }
+
+    fun movePaneBtoA() {
+        val sourceItems = _paneBState.value.selectedItems.toList()
+        if (sourceItems.isEmpty()) return
+        val targetDir = _storageState.value.currentDir
+        viewModelScope.launch {
+            fileRepository.move(sourceItems, targetDir)
+            showMessage("Moved ${sourceItems.size} items to Pane A (${targetDir.name})")
+            _paneBState.update { it.copy(selectedItems = emptySet()) }
+            loadDirectoryPaneB(_paneBState.value.currentDir)
             refreshCurrentDirectory()
         }
     }
@@ -2343,6 +2495,8 @@ class ExplorerViewModel(application: Application) : AndroidViewModel(application
         activeFtpServer?.stop()
         activeFtpServer = null
         webShareServer.stop()
+        fastShareRepository.stopShareServer()
+        vaultRepository.clearTempPreviewCache()
     }
 
     fun showMessage(msg: String) {

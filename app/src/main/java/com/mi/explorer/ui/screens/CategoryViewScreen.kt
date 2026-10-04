@@ -12,23 +12,30 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.mi.explorer.data.model.ApkTab
+import com.mi.explorer.data.model.ColorTag
 import com.mi.explorer.data.model.FileCategory
 import com.mi.explorer.data.model.FileItem
 import com.mi.explorer.data.model.SortType
 import com.mi.explorer.data.model.ViewMode
 import com.mi.explorer.data.model.sortFileList
 import com.mi.explorer.ui.components.ChecksumDialog
+import com.mi.explorer.ui.components.ExifCleanerDialog
 import com.mi.explorer.ui.components.MiFileGridItem
 import com.mi.explorer.ui.components.MiFileRow
 import com.mi.explorer.ui.components.MiSortBottomSheet
 import com.mi.explorer.ui.components.OpenFileChooserDialog
+import com.mi.explorer.ui.components.TagSelectionDialog
+import com.mi.explorer.ui.components.ZipCompressDialog
 import com.mi.explorer.ui.theme.MiGreen
 import com.mi.explorer.ui.theme.MiOrange
 import com.mi.explorer.ui.viewmodel.ExplorerViewModel
+import java.io.File
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -36,16 +43,73 @@ fun CategoryViewScreen(
     viewModel: ExplorerViewModel,
     modifier: Modifier = Modifier
 ) {
+    val context = LocalContext.current
     val state by viewModel.categoryViewState.collectAsStateWithLifecycle()
+    val fileTagsMap by viewModel.fileTagsMap.collectAsStateWithLifecycle()
+
     var openWithTarget by remember { mutableStateOf<FileItem?>(null) }
     var checksumTarget by remember { mutableStateOf<FileItem?>(null) }
     var deleteTarget by remember { mutableStateOf<FileItem?>(null) }
+    var renameTarget by remember { mutableStateOf<FileItem?>(null) }
+    var renameNewName by remember { mutableStateOf("") }
+    var detailsTarget by remember { mutableStateOf<FileItem?>(null) }
+    var tagTarget by remember { mutableStateOf<FileItem?>(null) }
+    var exifCleanerTarget by remember { mutableStateOf<FileItem?>(null) }
+    var zipTargets by remember { mutableStateOf<List<FileItem>?>(null) }
+    var zipArchiveName by remember { mutableStateOf("") }
+
     var showCategorySort by remember { mutableStateOf(false) }
     var categorySortType by remember { mutableStateOf(SortType.DATE_NEWEST) }
+    var foldersOnTop by remember { mutableStateOf(false) }
+    var showHidden by remember { mutableStateOf(false) }
+    var filterOnlyBigFiles by remember { mutableStateOf(false) }
     var viewMode by remember { mutableStateOf(ViewMode.LIST) }
 
-    val sortedItems = remember(state.items, categorySortType) {
-        sortFileList(state.items, categorySortType, foldersOnTop = false)
+    val sortedItems = remember(state.items, categorySortType, foldersOnTop, showHidden, filterOnlyBigFiles) {
+        val filtered = state.items.filter { item ->
+            val hiddenMatch = showHidden || !item.name.startsWith(".")
+            val bigMatch = !filterOnlyBigFiles || item.effectiveSize >= 10L * 1024 * 1024
+            hiddenMatch && bigMatch
+        }
+        sortFileList(filtered, categorySortType, foldersOnTop = foldersOnTop)
+    }
+
+    fun handleCategoryMenuAction(action: String, item: FileItem) {
+        when (action) {
+            "open" -> {
+                if (!viewModel.openFileSmart(item, sortedItems)) {
+                    openWithTarget = item
+                }
+            }
+            "open_with" -> openWithTarget = item
+            "toggle_favorite" -> viewModel.toggleFavorite(item.file)
+            "pin_home" -> {
+                val pinned = com.mi.explorer.utils.ShortcutHelper.pinFileOrFolderToHomeScreen(context, item)
+                viewModel.showMessage(if (pinned) "Shortcut request sent to Home Screen" else "Pinned shortcut not supported on this launcher")
+            }
+            "checksum" -> checksumTarget = item
+            "vault" -> {
+                viewModel.addFileToVault(item)
+                viewModel.refreshCategory()
+            }
+            "tags" -> tagTarget = item
+            "clean_exif" -> exifCleanerTarget = item
+            "fast_share" -> viewModel.openFastShare(listOf(item))
+            "shred" -> viewModel.openFileShredder(listOf(item.file))
+            "copy" -> viewModel.copySingle(item)
+            "cut" -> viewModel.cutSingle(item)
+            "rename" -> {
+                renameTarget = item
+                renameNewName = item.name
+            }
+            "delete" -> deleteTarget = item
+            "details" -> detailsTarget = item
+            "zip" -> {
+                zipArchiveName = "${item.name}.zip"
+                zipTargets = listOf(item)
+            }
+            "unzip" -> viewModel.openZipViewer(item.file)
+        }
     }
 
     Scaffold(
@@ -56,7 +120,7 @@ fun CategoryViewScreen(
                     Column {
                         Text(text = state.title, style = MaterialTheme.typography.titleLarge)
                         Text(
-                            text = "${state.items.size} files",
+                            text = "${sortedItems.size} files",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -87,7 +151,7 @@ fun CategoryViewScreen(
                             contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
                             shape = androidx.compose.foundation.shape.RoundedCornerShape(10.dp)
                         ) {
-                            Icon(Icons.Default.Download, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Icon(Icons.Default.InstallMobile, contentDescription = null, modifier = Modifier.size(16.dp))
                             Spacer(modifier = Modifier.width(4.dp))
                             Text("App Installer", style = MaterialTheme.typography.labelMedium)
                         }
@@ -105,7 +169,7 @@ fun CategoryViewScreen(
                 Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     CircularProgressIndicator(color = MiOrange)
                 }
-            } else if (state.items.isEmpty()) {
+            } else if (sortedItems.isEmpty()) {
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
@@ -121,10 +185,16 @@ fun CategoryViewScreen(
                         )
                         Spacer(modifier = Modifier.height(12.dp))
                         Text(
-                            text = "No ${state.title} found",
+                            text = if (filterOnlyBigFiles) "No big ${state.title} (>10MB) found" else "No ${state.title} found",
                             style = MaterialTheme.typography.titleMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
+                        if (filterOnlyBigFiles) {
+                            Spacer(modifier = Modifier.height(8.dp))
+                            TextButton(onClick = { filterOnlyBigFiles = false }) {
+                                Text("Show all ${state.items.size} items", color = MiOrange)
+                            }
+                        }
                     }
                 }
             } else if (viewMode == ViewMode.GRID) {
@@ -141,34 +211,22 @@ fun CategoryViewScreen(
                             horizontalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
                             rowItems.forEach { item ->
+                                val itemTagIds = fileTagsMap[item.path] ?: emptyList()
+                                val itemTags = itemTagIds.mapNotNull { ColorTag.findTag(it) }
                                 Box(modifier = Modifier.weight(1f)) {
                                     MiFileGridItem(
                                         item = item,
                                         isSelected = false,
                                         isSelectionMode = false,
+                                        tags = itemTags,
                                         onClick = {
-                                            if (!viewModel.openFileSmart(item, state.items)) {
+                                            if (!viewModel.openFileSmart(item, sortedItems)) {
                                                 openWithTarget = item
                                             }
                                         },
                                         onLongClick = {},
                                         onToggleSelect = {},
-                                        onMenuAction = { action ->
-                                            when (action) {
-                                                "open" -> {
-                                                    if (!viewModel.openFileSmart(item, state.items)) {
-                                                        openWithTarget = item
-                                                    }
-                                                }
-                                                "open_with" -> openWithTarget = item
-                                                "toggle_favorite" -> viewModel.toggleFavorite(item.file)
-                                                "checksum" -> checksumTarget = item
-                                                "copy" -> viewModel.copySingle(item)
-                                                "cut" -> viewModel.cutSingle(item)
-                                                "delete" -> deleteTarget = item
-                                                else -> {}
-                                            }
-                                        }
+                                        onMenuAction = { action -> handleCategoryMenuAction(action, item) }
                                     )
                                 }
                             }
@@ -185,33 +243,21 @@ fun CategoryViewScreen(
                     verticalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
                     items(sortedItems, key = { it.path }) { item ->
+                        val itemTagIds = fileTagsMap[item.path] ?: emptyList()
+                        val itemTags = itemTagIds.mapNotNull { ColorTag.findTag(it) }
                         MiFileRow(
                             item = item,
                             isSelected = false,
                             isSelectionMode = false,
+                            tags = itemTags,
                             onClick = {
-                                if (!viewModel.openFileSmart(item, state.items)) {
+                                if (!viewModel.openFileSmart(item, sortedItems)) {
                                     openWithTarget = item
                                 }
                             },
                             onLongClick = {},
                             onToggleSelect = {},
-                            onMenuAction = { action ->
-                                when (action) {
-                                    "open" -> {
-                                        if (!viewModel.openFileSmart(item, state.items)) {
-                                            openWithTarget = item
-                                        }
-                                    }
-                                    "open_with" -> openWithTarget = item
-                                    "toggle_favorite" -> viewModel.toggleFavorite(item.file)
-                                    "checksum" -> checksumTarget = item
-                                    "copy" -> viewModel.copySingle(item)
-                                    "cut" -> viewModel.cutSingle(item)
-                                    "delete" -> deleteTarget = item
-                                    else -> {}
-                                }
-                            }
+                            onMenuAction = { action -> handleCategoryMenuAction(action, item) }
                         )
                     }
                 }
@@ -233,7 +279,7 @@ fun CategoryViewScreen(
         }
         val builtInAction: (() -> Unit)? = when (target.category) {
             FileCategory.IMAGE -> {
-                { viewModel.openImageViewer(target.file, state.items) }
+                { viewModel.openImageViewer(target.file, sortedItems) }
             }
             FileCategory.CODE, FileCategory.DOCUMENT -> {
                 if (target.extension in listOf("txt", "md", "json", "xml", "kt", "java", "py", "sh", "html", "css", "js", "log", "csv")) {
@@ -261,6 +307,111 @@ fun CategoryViewScreen(
         ChecksumDialog(
             item = item,
             onDismiss = { checksumTarget = null }
+        )
+    }
+
+    renameTarget?.let { item ->
+        AlertDialog(
+            onDismissRequest = { renameTarget = null },
+            title = { Text("Rename") },
+            text = {
+                OutlinedTextField(
+                    value = renameNewName,
+                    onValueChange = { renameNewName = it },
+                    label = { Text("New name") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        if (renameNewName.isNotBlank() && renameNewName != item.name) {
+                            viewModel.renameItem(item, renameNewName)
+                            viewModel.refreshCategory()
+                            renameTarget = null
+                        }
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = MiOrange)
+                ) {
+                    Text("Rename")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { renameTarget = null }) {
+                    Text("Cancel")
+                }
+            }
+        )
+    }
+
+    detailsTarget?.let { item ->
+        AlertDialog(
+            onDismissRequest = { detailsTarget = null },
+            title = { Text("Details") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(text = "Name: ${item.name}", style = MaterialTheme.typography.bodyMedium)
+                    Text(text = "Location: ${item.path}", style = MaterialTheme.typography.bodySmall)
+                    Text(
+                        text = "Size: ${item.formattedSize} (${java.lang.String.format(java.util.Locale.US, "%,d", item.effectiveSize)} bytes)",
+                        style = MaterialTheme.typography.bodyMedium.copy(
+                            fontWeight = if (item.isLarge) FontWeight.Bold else FontWeight.Normal
+                        ),
+                        color = if (item.isLarge) MiOrange else MaterialTheme.colorScheme.onSurface
+                    )
+                    Text(text = "Type: ${item.friendlyTypeLabel}", style = MaterialTheme.typography.bodyMedium)
+                    Text(text = "Modified: ${item.formattedDate}", style = MaterialTheme.typography.bodySmall)
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { detailsTarget = null }) {
+                    Text("OK")
+                }
+            }
+        )
+    }
+
+    tagTarget?.let { item ->
+        val currentTagIds = fileTagsMap[item.path] ?: emptyList()
+        val currentTags = currentTagIds.mapNotNull { ColorTag.findTag(it) }
+        TagSelectionDialog(
+            fileItem = item,
+            currentTags = currentTags,
+            onToggleTag = { tag ->
+                viewModel.toggleTagForFile(item.file, tag.id)
+            },
+            onDismiss = { tagTarget = null }
+        )
+    }
+
+    exifCleanerTarget?.let { item ->
+        ExifCleanerDialog(
+            item = item,
+            onDismiss = { exifCleanerTarget = null },
+            onCleanSaved = {
+                viewModel.refreshCategory()
+                viewModel.showMessage("Photo EXIF metadata stripped!")
+            }
+        )
+    }
+
+    zipTargets?.let { targets ->
+        val parentDir = targets.firstOrNull()?.file?.parentFile ?: viewModel.fileRepository.downloadsDirectory
+        ZipCompressDialog(
+            selectedItems = targets,
+            defaultArchiveName = zipArchiveName,
+            onDismiss = { zipTargets = null },
+            onCompress = { name, level ->
+                val destFile = File(parentDir, name)
+                viewModel.compressFilesToZip(targets.map { it.file }, destFile, level)
+                zipTargets = null
+            },
+            onCompressPro = { name, format, level, password ->
+                val destFile = File(parentDir, name)
+                viewModel.compressFilesToZip(targets.map { it.file }, destFile, level, format, password)
+                zipTargets = null
+            }
         )
     }
 
@@ -306,6 +457,7 @@ fun CategoryViewScreen(
                         } else {
                             viewModel.deleteItems(listOf(item))
                         }
+                        viewModel.refreshCategory()
                         deleteTarget = null
                     },
                     colors = ButtonDefaults.buttonColors(
@@ -326,13 +478,13 @@ fun CategoryViewScreen(
     if (showCategorySort) {
         MiSortBottomSheet(
             currentSortType = categorySortType,
-            foldersOnTop = false,
-            showHidden = false,
-            filterOnlyBigFiles = false,
+            foldersOnTop = foldersOnTop,
+            showHidden = showHidden,
+            filterOnlyBigFiles = filterOnlyBigFiles,
             onSortTypeChange = { categorySortType = it },
-            onToggleFoldersOnTop = {},
-            onToggleShowHidden = {},
-            onToggleBigFilesFilter = {},
+            onToggleFoldersOnTop = { foldersOnTop = !foldersOnTop },
+            onToggleShowHidden = { showHidden = !showHidden },
+            onToggleBigFilesFilter = { filterOnlyBigFiles = !filterOnlyBigFiles },
             onDismiss = { showCategorySort = false }
         )
     }

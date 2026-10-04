@@ -69,6 +69,7 @@ class FtpServer(
             var passiveServerSocket: ServerSocket? = null
             var activeDataSocket: Socket? = null
             var transferType = "I" // Image (binary) by default
+            var renameSourceFile: File? = null
 
             try {
                 val reader = BufferedReader(InputStreamReader(socket.getInputStream(), Charsets.UTF_8))
@@ -96,7 +97,7 @@ class FtpServer(
                         "AUTH" -> sendResponse(502, "TLS/SSL not supported.")
                         "SYST" -> sendResponse(215, "UNIX Type: L8")
                         "FEAT" -> {
-                            writer.write("211-Features:\r\n PASV\r\n EPSV\r\n UTF8\r\n SIZE\r\n MLSD\r\n211 End\r\n")
+                            writer.write("211-Features:\r\n PASV\r\n EPSV\r\n UTF8\r\n SIZE\r\n MDTM\r\n MLSD\r\n RNFR\r\n RNTO\r\n211 End\r\n")
                             writer.flush()
                         }
                         "OPTS" -> {
@@ -318,6 +319,66 @@ class FtpServer(
                                 sendResponse(550, "Remove directory failed.")
                             }
                         }
+                        "RNFR" -> {
+                            val target = resolveTargetFile(rootDir, currentDirectory, argument)
+                            if (target.exists() && target != rootDir) {
+                                renameSourceFile = target
+                                sendResponse(350, "Requested file action pending further information.")
+                            } else {
+                                renameSourceFile = null
+                                sendResponse(550, "File or directory not found.")
+                            }
+                        }
+                        "RNTO" -> {
+                            val src = renameSourceFile
+                            renameSourceFile = null
+                            if (src == null || !src.exists()) {
+                                sendResponse(503, "Bad sequence of commands: RNFR required first.")
+                            } else {
+                                val dest = resolveTargetFile(rootDir, currentDirectory, argument)
+                                if (dest != rootDir && src.renameTo(dest)) {
+                                    sendResponse(250, "Rename successful.")
+                                } else {
+                                    sendResponse(550, "Rename failed.")
+                                }
+                            }
+                        }
+                        "APPE" -> {
+                            val target = resolveTargetFile(rootDir, currentDirectory, argument)
+                            sendResponse(150, "Ready to append data to ${target.name}.")
+                            val dataSocket = getDataSocket(isPassive, passiveServerSocket, activeDataSocket)
+                            if (dataSocket != null) {
+                                try {
+                                    val input = dataSocket.getInputStream()
+                                    FileOutputStream(target, true).use { output ->
+                                        val buffer = ByteArray(64 * 1024)
+                                        var bytesRead: Int
+                                        while (input.read(buffer).also { bytesRead = it } != -1) {
+                                            output.write(buffer, 0, bytesRead)
+                                        }
+                                        output.flush()
+                                    }
+                                } finally {
+                                    dataSocket.close()
+                                    passiveServerSocket?.close()
+                                    passiveServerSocket = null
+                                }
+                                sendResponse(226, "Append complete.")
+                            } else {
+                                sendResponse(425, "Data connection failed.")
+                            }
+                        }
+                        "MDTM" -> {
+                            val target = resolveTargetFile(rootDir, currentDirectory, argument)
+                            if (target.exists()) {
+                                val fmt = SimpleDateFormat("yyyyMMddHHmmss", Locale.US).apply {
+                                    timeZone = TimeZone.getTimeZone("UTC")
+                                }
+                                sendResponse(213, fmt.format(Date(target.lastModified())))
+                            } else {
+                                sendResponse(550, "File not found.")
+                            }
+                        }
                         "QUIT" -> {
                             sendResponse(221, "Goodbye.")
                             break
@@ -379,10 +440,10 @@ class FtpServer(
     }
 
     private fun getRelativePath(root: File, current: File): String {
-        val rootPath = root.absolutePath
-        val curPath = current.absolutePath
+        val rootPath = try { root.canonicalPath.trimEnd('/') } catch (_: Exception) { root.absolutePath.trimEnd('/') }
+        val curPath = try { current.canonicalPath.trimEnd('/') } catch (_: Exception) { current.absolutePath.trimEnd('/') }
         if (curPath == rootPath) return "/"
-        return if (curPath.startsWith(rootPath)) {
+        return if (curPath.startsWith("$rootPath/")) {
             curPath.removePrefix(rootPath).replace('\\', '/')
         } else {
             "/"

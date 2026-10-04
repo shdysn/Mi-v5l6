@@ -64,6 +64,45 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun handleIncomingIntent(intent: Intent) {
+        // 0. Check In-App PackageInstaller Session Commit Callback (APK / Split XAPK / APKS)
+        if (intent.action == "com.mi.explorer.ACTION_INSTALL_COMMIT") {
+            val status = intent.getIntExtra(
+                android.content.pm.PackageInstaller.EXTRA_STATUS,
+                android.content.pm.PackageInstaller.STATUS_FAILURE
+            )
+            val statusMessage = intent.getStringExtra(android.content.pm.PackageInstaller.EXTRA_STATUS_MESSAGE)
+            when (status) {
+                android.content.pm.PackageInstaller.STATUS_PENDING_USER_ACTION -> {
+                    val confirmIntent = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                        intent.getParcelableExtra(Intent.EXTRA_INTENT, Intent::class.java)
+                    } else {
+                        @Suppress("DEPRECATION")
+                        intent.getParcelableExtra(Intent.EXTRA_INTENT)
+                    }
+                    if (confirmIntent != null) {
+                        confirmIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                        try {
+                            startActivity(confirmIntent)
+                        } catch (e: Exception) {
+                            viewModel.showMessage("Cannot launch installer prompt: ${e.localizedMessage}")
+                        }
+                    }
+                }
+                android.content.pm.PackageInstaller.STATUS_SUCCESS -> {
+                    viewModel.showMessage("Package installed successfully!")
+                    viewModel.loadApps()
+                    viewModel.loadStorageApks()
+                }
+                android.content.pm.PackageInstaller.STATUS_FAILURE_ABORTED -> {
+                    viewModel.showMessage("Installation cancelled by user")
+                }
+                else -> {
+                    viewModel.showMessage("Installation failed: ${statusMessage ?: "Error code $status"}")
+                }
+            }
+            return
+        }
+
         // 1. Check Home Screen Storage Widget Actions
         val widgetTarget = intent.getStringExtra(com.mi.explorer.widget.MiStorageWidgetProvider.EXTRA_WIDGET_TARGET)
         if (!widgetTarget.isNullOrBlank()) {

@@ -16,8 +16,10 @@ import androidx.compose.material.icons.filled.Language
 import androidx.compose.material.icons.filled.Save
 import androidx.compose.material.icons.filled.WrapText
 import androidx.compose.material3.*
+import androidx.activity.compose.BackHandler
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -42,6 +44,10 @@ fun TextEditorScreen(
     val state by viewModel.textEditorState.collectAsStateWithLifecycle()
     val scrollState = rememberScrollState()
     val hScrollState = rememberScrollState()
+
+    BackHandler {
+        viewModel.handleBackPress()
+    }
 
     val displayTitle = state.title.ifEmpty { state.file?.name ?: "Text Viewer" }
 
@@ -155,9 +161,10 @@ fun TextEditorScreen(
                     .padding(innerPadding)
                     .background(MaterialTheme.colorScheme.background)
             ) {
-                val lines = state.content.lines()
-                val lineCount = if (lines.isEmpty()) 1 else lines.size
-                val lineNumbersText = (1..lineCount).joinToString("\n")
+                val lineCount = state.lineCount.coerceIn(1, 3000)
+                val lineNumbersText = remember(lineCount) {
+                    (1..lineCount).joinToString("\n")
+                }
 
                 Row(
                     modifier = Modifier

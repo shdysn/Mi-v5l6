@@ -261,6 +261,7 @@ fun MainScreen(
                                 "tags" -> tagTarget = item
                                 "clean_exif" -> exifCleanerTarget = item
                                 "fast_share" -> viewModel.openFastShare(listOf(item))
+                                "shred" -> viewModel.openFileShredder(listOf(item.file))
                                 "copy" -> viewModel.copySingle(item)
                                 "cut" -> viewModel.cutSingle(item)
                                 "rename" -> {
@@ -296,6 +297,9 @@ fun MainScreen(
                         onBackPaneB = { viewModel.backPaneB() },
                         onCopyAtoB = { viewModel.copyPaneAtoB() },
                         onCopyBtoA = { viewModel.copyPaneBtoA() },
+                        onMoveAtoB = { viewModel.movePaneAtoB() },
+                        onMoveBtoA = { viewModel.movePaneBtoA() },
+                        onToggleSelectB = { viewModel.toggleSelectPaneB(it) },
                         storageVolumes = storageVolumes,
                         selectedVolume = selectedVolume,
                         onSwitchVolume = { viewModel.switchStorageVolume(it) },
@@ -323,6 +327,11 @@ fun MainScreen(
                         onVaultClick = { viewModel.openVault() },
                         onDuplicatesClick = { viewModel.openDuplicateFinder() },
                         onAnalyzerClick = { viewModel.openStorageAnalyzer() },
+                        onWebShareClick = { viewModel.openWebShare() },
+                        onStatusSaverClick = { viewModel.openStatusSaver() },
+                        onFileShredderClick = { viewModel.openFileShredder() },
+                        onSmartCollectionsClick = { viewModel.openSmartCollections() },
+                        onTimeMachineClick = { viewModel.openTimeMachine() },
                         onPinWidgetClick = {
                             val ok = com.mi.explorer.utils.ShortcutHelper.requestPinStorageWidget(context)
                             viewModel.showMessage(if (ok) "Home Screen Storage Widget prompt opened!" else "Long-press Home Screen -> Widgets -> Mi Explorer")
@@ -379,6 +388,7 @@ fun MainScreen(
                                 "tags" -> tagTarget = item
                                 "clean_exif" -> exifCleanerTarget = item
                                 "fast_share" -> viewModel.openFastShare(listOf(item))
+                                "shred" -> viewModel.openFileShredder(listOf(item.file))
                                 "copy" -> viewModel.copySingle(item)
                                 "cut" -> viewModel.cutSingle(item)
                                 "rename" -> {
@@ -987,6 +997,9 @@ fun StorageTabContent(
     onBackPaneB: () -> Unit = {},
     onCopyAtoB: () -> Unit = {},
     onCopyBtoA: () -> Unit = {},
+    onMoveAtoB: () -> Unit = {},
+    onMoveBtoA: () -> Unit = {},
+    onToggleSelectB: (FileItem) -> Unit = {},
     storageVolumes: List<StorageVolumeItem> = emptyList(),
     selectedVolume: StorageVolumeItem? = null,
     onSwitchVolume: (StorageVolumeItem) -> Unit = {},
@@ -1008,6 +1021,11 @@ fun StorageTabContent(
     onVaultClick: () -> Unit,
     onDuplicatesClick: () -> Unit,
     onAnalyzerClick: () -> Unit,
+    onWebShareClick: () -> Unit = {},
+    onStatusSaverClick: () -> Unit = {},
+    onFileShredderClick: () -> Unit = {},
+    onSmartCollectionsClick: () -> Unit = {},
+    onTimeMachineClick: () -> Unit = {},
     onPinWidgetClick: () -> Unit = {},
     onBatchRename: () -> Unit,
     onNavigateTo: (File) -> Unit,
@@ -1038,7 +1056,13 @@ fun StorageTabContent(
             onBackA = onBackPaneA,
             onBackB = onBackPaneB,
             onCopyAtoB = onCopyAtoB,
-            onCopyBtoA = onCopyBtoA
+            onCopyBtoA = onCopyBtoA,
+            onMoveAtoB = onMoveAtoB,
+            onMoveBtoA = onMoveBtoA,
+            onToggleSelectA = onToggleSelect,
+            onToggleSelectB = onToggleSelectB,
+            onClearSelectA = onClearSelection,
+            onOpenFile = onOpenFile
         )
         return
     }
@@ -1127,9 +1151,54 @@ fun StorageTabContent(
                             UtilityCard(
                                 title = "App Installer",
                                 subtitle = "Install APK / XAPK",
-                                icon = Icons.Default.Download,
+                                icon = Icons.Default.InstallMobile,
                                 color = Color(0xFF059669),
                                 onClick = onAppInstallerClick
+                            )
+                        }
+                        item {
+                            UtilityCard(
+                                title = "Status Saver",
+                                subtitle = "WhatsApp Status",
+                                icon = Icons.Default.BookmarkAdded,
+                                color = Color(0xFF10B981),
+                                onClick = onStatusSaverClick
+                            )
+                        }
+                        item {
+                            UtilityCard(
+                                title = "PC Web Portal",
+                                subtitle = "Send & Receive",
+                                icon = Icons.Default.Language,
+                                color = Color(0xFF2563EB),
+                                onClick = onWebShareClick
+                            )
+                        }
+                        item {
+                            UtilityCard(
+                                title = "Smart Hubs",
+                                subtitle = "Auto Collections",
+                                icon = Icons.Default.AutoAwesomeMosaic,
+                                color = Color(0xFF8B5CF6),
+                                onClick = onSmartCollectionsClick
+                            )
+                        }
+                        item {
+                            UtilityCard(
+                                title = "Time Machine",
+                                subtitle = "On This Day",
+                                icon = Icons.Default.History,
+                                color = Color(0xFFF59E0B),
+                                onClick = onTimeMachineClick
+                            )
+                        }
+                        item {
+                            UtilityCard(
+                                title = "File Shredder",
+                                subtitle = "DoD 3-Pass Wipe",
+                                icon = Icons.Default.EnhancedEncryption,
+                                color = Color(0xFFEF4444),
+                                onClick = onFileShredderClick
                             )
                         }
                         item {
@@ -1651,7 +1720,12 @@ fun StorageTabContent(
             onDualPaneToggle = onDualPaneToggle,
             isDualPaneActive = isDualPaneActive,
             onSocialClick = onSocialClick,
-            onPinWidgetClick = onPinWidgetClick
+            onPinWidgetClick = onPinWidgetClick,
+            onWebShareClick = onWebShareClick,
+            onStatusSaverClick = onStatusSaverClick,
+            onFileShredderClick = onFileShredderClick,
+            onSmartCollectionsClick = onSmartCollectionsClick,
+            onTimeMachineClick = onTimeMachineClick
         )
     }
 }

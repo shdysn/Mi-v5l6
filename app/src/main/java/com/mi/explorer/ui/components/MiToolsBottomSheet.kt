@@ -49,7 +49,12 @@ fun MiToolsBottomSheet(
     onDualPaneToggle: () -> Unit,
     isDualPaneActive: Boolean = false,
     onSocialClick: () -> Unit = {},
-    onPinWidgetClick: () -> Unit = {}
+    onPinWidgetClick: () -> Unit = {},
+    onWebShareClick: () -> Unit = {},
+    onStatusSaverClick: () -> Unit = {},
+    onFileShredderClick: () -> Unit = {},
+    onSmartCollectionsClick: () -> Unit = {},
+    onTimeMachineClick: () -> Unit = {}
 ) {
     val tools = listOf(
         ToolItem(
@@ -64,7 +69,7 @@ fun MiToolsBottomSheet(
             id = "app_installer",
             title = "App Installer",
             subtitle = "Install APK, XAPK, APKS",
-            icon = Icons.Default.Download,
+            icon = Icons.Default.InstallMobile,
             iconColor = Color(0xFF059669),
             onClick = { onDismiss(); onAppInstallerClick() }
         ),
@@ -75,6 +80,14 @@ fun MiToolsBottomSheet(
             icon = Icons.Default.Chat,
             iconColor = Color(0xFF25D366),
             onClick = { onDismiss(); onSocialClick() }
+        ),
+        ToolItem(
+            id = "status_saver",
+            title = "Status Saver",
+            subtitle = "Save WhatsApp statuses",
+            icon = Icons.Default.BookmarkAdded,
+            iconColor = Color(0xFF10B981),
+            onClick = { onDismiss(); onStatusSaverClick() }
         ),
         ToolItem(
             id = "vault",
@@ -93,12 +106,44 @@ fun MiToolsBottomSheet(
             onClick = { onDismiss(); onFastShareClick() }
         ),
         ToolItem(
+            id = "web_share",
+            title = "PC Web Portal",
+            subtitle = "Send & receive via browser",
+            icon = Icons.Default.Language,
+            iconColor = Color(0xFF2563EB),
+            onClick = { onDismiss(); onWebShareClick() }
+        ),
+        ToolItem(
             id = "cloud",
             title = "Cloud & Network Drives",
             subtitle = "Google Drive, OneDrive, SMB",
             icon = Icons.Default.CloudQueue,
             iconColor = Color(0xFF0EA5E9),
             onClick = { onDismiss(); onNetworkDrivesClick() }
+        ),
+        ToolItem(
+            id = "smart_collections",
+            title = "Smart Collections",
+            subtitle = "Auto-curated virtual hubs",
+            icon = Icons.Default.AutoAwesomeMosaic,
+            iconColor = Color(0xFF8B5CF6),
+            onClick = { onDismiss(); onSmartCollectionsClick() }
+        ),
+        ToolItem(
+            id = "time_machine",
+            title = "Time Machine",
+            subtitle = "On This Day & timeline",
+            icon = Icons.Default.History,
+            iconColor = Color(0xFFF59E0B),
+            onClick = { onDismiss(); onTimeMachineClick() }
+        ),
+        ToolItem(
+            id = "file_shredder",
+            title = "File Shredder",
+            subtitle = "DoD 3-pass secure wipe",
+            icon = Icons.Default.EnhancedEncryption,
+            iconColor = Color(0xFFEF4444),
+            onClick = { onDismiss(); onFileShredderClick() }
         ),
         ToolItem(
             id = "root_browser",

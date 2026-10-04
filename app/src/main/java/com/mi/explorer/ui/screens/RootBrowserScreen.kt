@@ -29,6 +29,7 @@ import com.mi.explorer.ui.theme.MiBlue
 import com.mi.explorer.ui.theme.MiGreen
 import com.mi.explorer.ui.theme.MiOrange
 import com.mi.explorer.ui.viewmodel.ExplorerViewModel
+import com.mi.explorer.utils.RootFileEntry
 import com.mi.explorer.utils.RootHelper
 import com.mi.explorer.utils.RootStatus
 import kotlinx.coroutines.launch
@@ -44,18 +45,23 @@ fun RootBrowserScreen(
     var currentDir by remember { mutableStateOf(File("/")) }
     var rootStatus by remember { mutableStateOf<RootStatus?>(null) }
     var isCheckingRoot by remember { mutableStateOf(false) }
-    var items by remember { mutableStateOf<List<File>>(emptyList()) }
+    var items by remember { mutableStateOf<List<RootFileEntry>>(emptyList()) }
     var permissionDenied by remember { mutableStateOf(false) }
 
     fun loadDir(dir: File) {
         currentDir = dir
-        val list = dir.listFiles()
-        if (list == null) {
-            permissionDenied = true
-            items = emptyList()
-        } else {
-            permissionDenied = false
-            items = list.sortedWith(compareBy({ !it.isDirectory }, { it.name.lowercase() }))
+        scope.launch {
+            val res = RootHelper.listDirectory(dir, rootStatus)
+            res.fold(
+                onSuccess = { list ->
+                    permissionDenied = false
+                    items = list
+                },
+                onFailure = {
+                    permissionDenied = true
+                    items = emptyList()
+                }
+            )
         }
     }
 
@@ -267,8 +273,8 @@ fun RootBrowserScreen(
                     }
                 }
             } else {
-                items(items, key = { it.absolutePath }) { file ->
-                    val perms = remember(file) { RootHelper.getFileLinuxPermissions(file) }
+                items(items, key = { it.file.absolutePath }) { entry ->
+                    val file = entry.file
                     Surface(
                         shape = RoundedCornerShape(12.dp),
                         color = MaterialTheme.colorScheme.surface,
@@ -276,14 +282,14 @@ fun RootBrowserScreen(
                         modifier = Modifier
                             .fillMaxWidth()
                             .clickable {
-                                if (file.isDirectory) {
+                                if (entry.isDirectory) {
                                     loadDir(file)
                                 } else {
                                     // If file is text/prop/conf/script, open in editor
                                     if (file.extension in listOf("prop", "conf", "sh", "rc", "xml", "txt", "json", "log", "cfg", "ini")) {
                                         viewModel.openTextEditor(file)
                                     } else {
-                                        viewModel.showMessage("${file.name} (${FileItem.formatBytes(file.length())})")
+                                        viewModel.showMessage("${entry.name} (${FileItem.formatBytes(entry.size)})")
                                     }
                                 }
                             }
@@ -299,21 +305,21 @@ fun RootBrowserScreen(
                                     .size(38.dp)
                                     .clip(RoundedCornerShape(10.dp))
                                     .background(
-                                        if (file.isDirectory) MiBlue.copy(alpha = 0.15f) else Color(0xFF64748B).copy(alpha = 0.15f)
+                                        if (entry.isDirectory) MiBlue.copy(alpha = 0.15f) else Color(0xFF64748B).copy(alpha = 0.15f)
                                     ),
                                 contentAlignment = Alignment.Center
                             ) {
                                 Icon(
-                                    imageVector = if (file.isDirectory) Icons.Default.Folder else Icons.Default.Description,
+                                    imageVector = if (entry.isDirectory) Icons.Default.Folder else Icons.Default.Description,
                                     contentDescription = null,
-                                    tint = if (file.isDirectory) MiBlue else Color(0xFF64748B),
+                                    tint = if (entry.isDirectory) MiBlue else Color(0xFF64748B),
                                     modifier = Modifier.size(22.dp)
                                 )
                             }
                             Spacer(modifier = Modifier.width(12.dp))
                             Column(modifier = Modifier.weight(1f)) {
                                 Text(
-                                    text = file.name,
+                                    text = entry.name,
                                     style = MaterialTheme.typography.bodyMedium,
                                     fontWeight = FontWeight.Medium,
                                     maxLines = 1,
@@ -321,18 +327,18 @@ fun RootBrowserScreen(
                                 )
                                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                     Text(
-                                        text = perms,
+                                        text = entry.permissions,
                                         style = MaterialTheme.typography.labelSmall.copy(fontFamily = FontFamily.Monospace, fontSize = 10.sp),
                                         color = MiOrange
                                     )
                                     Text(
-                                        text = if (file.isDirectory) "Dir" else FileItem.formatBytes(file.length()),
+                                        text = if (entry.isDirectory) "Dir" else FileItem.formatBytes(entry.size),
                                         style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
                                         color = MaterialTheme.colorScheme.onSurfaceVariant
                                     )
                                 }
                             }
-                            if (file.isDirectory) {
+                            if (entry.isDirectory) {
                                 Icon(Icons.Default.ChevronRight, contentDescription = null, tint = MaterialTheme.colorScheme.outline)
                             } else if (file.extension in listOf("prop", "conf", "sh", "rc", "xml", "txt")) {
                                 IconButton(onClick = { viewModel.openTextEditor(file) }, modifier = Modifier.size(32.dp)) {

@@ -67,12 +67,72 @@ class VaultRepository(private val context: Context) {
         return hash(answer.trim().lowercase()) == storedHash
     }
 
+    fun resetPinWithSecurityAnswer(answer: String, newPin: String): Boolean {
+        if (!verifySecurityAnswer(answer)) return false
+        prefs.edit().putString(KEY_PIN_HASH, hash(newPin)).apply()
+        return true
+    }
+
     fun isBiometricEnabled(): Boolean {
         return prefs.getBoolean(KEY_BIOMETRIC_ENABLED, true)
     }
 
     fun setBiometricEnabled(enabled: Boolean) {
         prefs.edit().putBoolean(KEY_BIOMETRIC_ENABLED, enabled).apply()
+    }
+
+    /**
+     * Decrypts a vault file to a temporary preview cache file so in-app viewers
+     * (ImageViewer, VideoPlayer, PdfViewer, AudioPlayer, TextEditor) or external choosers
+     * can read valid decrypted bytes instead of the encrypted MIV1 stream.
+     */
+    suspend fun decryptToTempCacheFile(vaultFile: File): File? = withContext(Dispatchers.IO) {
+        if (!vaultFile.exists()) return@withContext null
+        try {
+            val previewDir = File(context.cacheDir, "vault_preview").apply {
+                if (!exists()) mkdirs()
+            }
+            val cleanName = vaultFile.name.replace(Regex("^\\d{13}_"), "")
+            val tempOut = File(previewDir, cleanName)
+
+            FileInputStream(vaultFile).use { fis ->
+                val header = ByteArray(MAGIC_HEADER.size)
+                val readHeader = fis.read(header)
+                if (readHeader == MAGIC_HEADER.size && header.contentEquals(MAGIC_HEADER)) {
+                    val iv = ByteArray(16)
+                    val readIv = fis.read(iv)
+                    if (readIv == 16) {
+                        val cipher = Cipher.getInstance("AES/CBC/PKCS5Padding")
+                        cipher.init(Cipher.DECRYPT_MODE, vaultKey, IvParameterSpec(iv))
+                        CipherInputStream(fis, cipher).use { cis ->
+                            FileOutputStream(tempOut).use { fos ->
+                                cis.copyTo(fos)
+                            }
+                        }
+                    } else {
+                        return@withContext null
+                    }
+                } else {
+                    FileOutputStream(tempOut).use { fos ->
+                        if (readHeader > 0) fos.write(header, 0, readHeader)
+                        fis.copyTo(fos)
+                    }
+                }
+            }
+            tempOut
+        } catch (e: Exception) {
+            e.printStackTrace()
+            null
+        }
+    }
+
+    fun clearTempPreviewCache() {
+        try {
+            val previewDir = File(context.cacheDir, "vault_preview")
+            if (previewDir.exists()) {
+                previewDir.deleteRecursively()
+            }
+        } catch (_: Exception) {}
     }
 
     suspend fun getVaultFiles(): List<FileItem> = withContext(Dispatchers.IO) {

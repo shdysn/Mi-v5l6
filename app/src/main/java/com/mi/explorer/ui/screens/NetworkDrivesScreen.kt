@@ -40,9 +40,13 @@ fun NetworkDrivesScreen(
     val drives by viewModel.networkDrives.collectAsStateWithLifecycle()
     val activeDrive by viewModel.activeNetworkDrive.collectAsStateWithLifecycle()
     val remoteFiles by viewModel.remoteFiles.collectAsStateWithLifecycle()
+    val currentRemotePath by viewModel.currentRemotePath.collectAsStateWithLifecycle()
     val isTesting by viewModel.isTestingNetworkDrive.collectAsStateWithLifecycle()
 
     var showAddDialog by remember { mutableStateOf(false) }
+    var cloudAccountTarget by remember { mutableStateOf<Triple<String, DriveProtocol, String>?>(null) }
+    var cloudEmailInput by remember { mutableStateOf("") }
+    var cloudTokenInput by remember { mutableStateOf("") }
 
     LaunchedEffect(Unit) {
         viewModel.loadNetworkDrives()
@@ -50,7 +54,9 @@ fun NetworkDrivesScreen(
 
     BackHandler {
         if (activeDrive != null) {
-            viewModel.disconnectNetworkDrive()
+            if (!viewModel.navigateUpRemoteFolder()) {
+                viewModel.disconnectNetworkDrive()
+            }
         } else {
             viewModel.handleBackPress()
         }
@@ -68,7 +74,7 @@ fun NetworkDrivesScreen(
                             fontWeight = FontWeight.SemiBold
                         )
                         Text(
-                            text = if (activeDrive != null) activeDrive!!.displaySubtitle else "SMB, WebDAV, Nextcloud & Network Storage",
+                            text = if (activeDrive != null) "${activeDrive!!.serverHost} • $currentRemotePath" else "SMB, WebDAV, FTP & Cloud Storage",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -77,7 +83,9 @@ fun NetworkDrivesScreen(
                 navigationIcon = {
                     IconButton(onClick = {
                         if (activeDrive != null) {
-                            viewModel.disconnectNetworkDrive()
+                            if (!viewModel.navigateUpRemoteFolder()) {
+                                viewModel.disconnectNetworkDrive()
+                            }
                         } else {
                             viewModel.handleBackPress()
                         }
@@ -87,6 +95,9 @@ fun NetworkDrivesScreen(
                 },
                 actions = {
                     if (activeDrive == null) {
+                        IconButton(onClick = { viewModel.scanLanForNetworkDrives() }) {
+                            Icon(Icons.Default.Radar, contentDescription = "Scan Local LAN", tint = MiOrange)
+                        }
                         IconButton(onClick = { showAddDialog = true }) {
                             Icon(Icons.Default.Add, contentDescription = "Add Drive")
                         }
@@ -116,10 +127,20 @@ fun NetworkDrivesScreen(
                             .padding(horizontal = 16.dp, vertical = 10.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Icon(Icons.Default.CloudQueue, contentDescription = null, tint = MiOrange, modifier = Modifier.size(20.dp))
-                        Spacer(modifier = Modifier.width(8.dp))
+                        if (currentRemotePath != activeDrive!!.remotePath && currentRemotePath != "/") {
+                            IconButton(
+                                onClick = { viewModel.navigateUpRemoteFolder() },
+                                modifier = Modifier.size(28.dp)
+                            ) {
+                                Icon(Icons.Default.ArrowUpward, contentDescription = "Up Folder", tint = MiOrange, modifier = Modifier.size(18.dp))
+                            }
+                            Spacer(modifier = Modifier.width(6.dp))
+                        } else {
+                            Icon(Icons.Default.CloudQueue, contentDescription = null, tint = MiOrange, modifier = Modifier.size(20.dp))
+                            Spacer(modifier = Modifier.width(8.dp))
+                        }
                         Text(
-                            text = "Connected to ${activeDrive!!.serverHost}",
+                            text = "Path: $currentRemotePath",
                             style = MaterialTheme.typography.bodySmall,
                             fontWeight = FontWeight.Medium,
                             modifier = Modifier.weight(1f)
@@ -138,9 +159,18 @@ fun NetworkDrivesScreen(
                     modifier = Modifier.fillMaxSize(),
                     contentPadding = PaddingValues(vertical = 8.dp)
                 ) {
-                    items(remoteFiles) { file ->
+                    items(remoteFiles, key = { it.path }) { file ->
                         RemoteFileRow(
                             item = file,
+                            onClick = {
+                                if (file.isDirectory) {
+                                    viewModel.navigateRemoteFolder(file)
+                                } else {
+                                    activeDrive?.let { drive ->
+                                        viewModel.downloadNetworkFile(drive, file)
+                                    }
+                                }
+                            },
                             onDownload = {
                                 activeDrive?.let { drive ->
                                     viewModel.downloadNetworkFile(drive, file)
@@ -207,17 +237,9 @@ fun NetworkDrivesScreen(
                             icon = Icons.Default.Cloud,
                             connectedDrive = drives.firstOrNull { it.protocol == DriveProtocol.GOOGLE_DRIVE },
                             onConnect = {
-                                viewModel.saveNetworkDrive(
-                                    NetworkDrive(
-                                        id = UUID.randomUUID().toString(),
-                                        name = "Google Drive",
-                                        protocol = DriveProtocol.GOOGLE_DRIVE,
-                                        serverHost = "drive.google.com",
-                                        port = 443,
-                                        username = "user@gmail.com",
-                                        remotePath = "/My Drive"
-                                    )
-                                )
+                                cloudEmailInput = ""
+                                cloudTokenInput = ""
+                                cloudAccountTarget = Triple("Google Drive", DriveProtocol.GOOGLE_DRIVE, "/My Drive")
                             },
                             onBrowse = { drive -> viewModel.connectNetworkDrive(drive) },
                             onDisconnect = { drive -> viewModel.deleteNetworkDrive(drive.id) }
@@ -230,17 +252,9 @@ fun NetworkDrivesScreen(
                             icon = Icons.Default.CloudDone,
                             connectedDrive = drives.firstOrNull { it.protocol == DriveProtocol.ONEDRIVE },
                             onConnect = {
-                                viewModel.saveNetworkDrive(
-                                    NetworkDrive(
-                                        id = UUID.randomUUID().toString(),
-                                        name = "Microsoft OneDrive",
-                                        protocol = DriveProtocol.ONEDRIVE,
-                                        serverHost = "onedrive.live.com",
-                                        port = 443,
-                                        username = "user@outlook.com",
-                                        remotePath = "/Documents"
-                                    )
-                                )
+                                cloudEmailInput = ""
+                                cloudTokenInput = ""
+                                cloudAccountTarget = Triple("Microsoft OneDrive", DriveProtocol.ONEDRIVE, "/Documents")
                             },
                             onBrowse = { drive -> viewModel.connectNetworkDrive(drive) },
                             onDisconnect = { drive -> viewModel.deleteNetworkDrive(drive.id) }
@@ -253,17 +267,9 @@ fun NetworkDrivesScreen(
                             icon = Icons.Default.Inventory2,
                             connectedDrive = drives.firstOrNull { it.protocol == DriveProtocol.DROPBOX },
                             onConnect = {
-                                viewModel.saveNetworkDrive(
-                                    NetworkDrive(
-                                        id = UUID.randomUUID().toString(),
-                                        name = "Dropbox",
-                                        protocol = DriveProtocol.DROPBOX,
-                                        serverHost = "dropbox.com",
-                                        port = 443,
-                                        username = "user@dropbox.com",
-                                        remotePath = "/Personal"
-                                    )
-                                )
+                                cloudEmailInput = ""
+                                cloudTokenInput = ""
+                                cloudAccountTarget = Triple("Dropbox", DriveProtocol.DROPBOX, "/Personal")
                             },
                             onBrowse = { drive -> viewModel.connectNetworkDrive(drive) },
                             onDisconnect = { drive -> viewModel.deleteNetworkDrive(drive.id) }
@@ -291,20 +297,99 @@ fun NetworkDrivesScreen(
                 }
 
                 item {
-                    OutlinedButton(
-                        onClick = { showAddDialog = true },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(top = 12.dp),
-                        shape = RoundedCornerShape(12.dp)
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        Icon(Icons.Default.Add, contentDescription = null)
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text("Add New Network Drive")
+                        OutlinedButton(
+                            onClick = { viewModel.scanLanForNetworkDrives() },
+                            modifier = Modifier.weight(1f),
+                            shape = RoundedCornerShape(12.dp)
+                        ) {
+                            Icon(Icons.Default.Radar, contentDescription = null, tint = MiOrange)
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("Scan LAN")
+                        }
+                        Button(
+                            onClick = { showAddDialog = true },
+                            modifier = Modifier.weight(1.4f),
+                            colors = ButtonDefaults.buttonColors(containerColor = MiOrange),
+                            shape = RoundedCornerShape(12.dp)
+                        ) {
+                            Icon(Icons.Default.Add, contentDescription = null)
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("Add Network Drive")
+                        }
                     }
                 }
             }
         }
+    }
+
+    cloudAccountTarget?.let { (brandName, proto, defaultPath) ->
+        AlertDialog(
+            onDismissRequest = { cloudAccountTarget = null },
+            title = { Text("Connect $brandName") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text(
+                        text = "Enter your $brandName account email and optional OAuth / App Password token to mount your cloud workspace.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    OutlinedTextField(
+                        value = cloudEmailInput,
+                        onValueChange = { cloudEmailInput = it },
+                        label = { Text("Account Email") },
+                        placeholder = { Text("name@example.com") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    OutlinedTextField(
+                        value = cloudTokenInput,
+                        onValueChange = { cloudTokenInput = it },
+                        label = { Text("App Password / Access Token (Optional)") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        val email = cloudEmailInput.trim().ifEmpty { "connected@${brandName.lowercase().replace(" ", "")}.com" }
+                        val host = when (proto) {
+                            DriveProtocol.GOOGLE_DRIVE -> "drive.google.com"
+                            DriveProtocol.ONEDRIVE -> "onedrive.live.com"
+                            DriveProtocol.DROPBOX -> "dropbox.com"
+                            else -> "cloud.example.com"
+                        }
+                        viewModel.saveNetworkDrive(
+                            NetworkDrive(
+                                id = UUID.randomUUID().toString(),
+                                name = brandName,
+                                protocol = proto,
+                                serverHost = host,
+                                port = 443,
+                                username = email,
+                                password = cloudTokenInput.trim(),
+                                remotePath = defaultPath,
+                                lastConnected = System.currentTimeMillis()
+                            )
+                        )
+                        cloudAccountTarget = null
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = MiOrange)
+                ) {
+                    Text("Connect Account")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { cloudAccountTarget = null }) {
+                    Text("Cancel")
+                }
+            }
+        )
     }
 
     if (showAddDialog) {
@@ -407,11 +492,13 @@ fun NetworkDriveCard(
 @Composable
 fun RemoteFileRow(
     item: RemoteFileItem,
+    onClick: () -> Unit = {},
     onDownload: () -> Unit
 ) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
+            .clickable(onClick = onClick)
             .padding(horizontal = 16.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
@@ -426,12 +513,16 @@ fun RemoteFileRow(
             Text(text = item.name, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
             if (!item.isDirectory) {
                 Text(text = item.formattedSize, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            } else {
+                Text(text = "Folder • Tap to browse", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
         if (!item.isDirectory) {
             IconButton(onClick = onDownload) {
                 Icon(Icons.Default.Download, contentDescription = "Download", tint = MaterialTheme.colorScheme.primary)
             }
+        } else {
+            Icon(Icons.Default.ChevronRight, contentDescription = "Open folder", tint = MaterialTheme.colorScheme.outline)
         }
     }
 }

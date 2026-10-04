@@ -49,6 +49,10 @@ fun VaultScreen(viewModel: ExplorerViewModel) {
     var showRestoreConfirmTarget by remember { mutableStateOf<FileItem?>(null) }
     var showDeleteConfirmTarget by remember { mutableStateOf<FileItem?>(null) }
     var showVaultSettings by remember { mutableStateOf(false) }
+    var showForgotPinDialog by remember { mutableStateOf(false) }
+    var recoveryAnswer by remember { mutableStateOf("") }
+    var recoveryNewPin by remember { mutableStateOf("") }
+    var recoveryError by remember { mutableStateOf<String?>(null) }
 
     val context = LocalContext.current
     val isBiometricEnabled by viewModel.isBiometricVaultEnabled.collectAsStateWithLifecycle()
@@ -269,6 +273,22 @@ fun VaultScreen(viewModel: ExplorerViewModel) {
                                 Text("Unlock with Fingerprint")
                             }
                         }
+
+                        if (isPinSet) {
+                            Spacer(modifier = Modifier.height(8.dp))
+                            TextButton(
+                                onClick = {
+                                    recoveryAnswer = ""
+                                    recoveryNewPin = ""
+                                    recoveryError = null
+                                    showForgotPinDialog = true
+                                }
+                            ) {
+                                Icon(Icons.Default.HelpOutline, contentDescription = null, tint = MiOrange, modifier = Modifier.size(16.dp))
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text("Forgot PIN? Recover via Security Question", color = MiOrange, style = MaterialTheme.typography.labelMedium)
+                            }
+                        }
                     }
                 }
             } else {
@@ -352,7 +372,11 @@ fun VaultScreen(viewModel: ExplorerViewModel) {
                             items(vaultFiles, key = { it.path }) { item ->
                                 VaultItemRow(
                                     item = item,
-                                    onClick = { FileOpener.openWithChooser(context, item) },
+                                    onClick = {
+                                        viewModel.openVaultFilePreview(item) { decryptedItem ->
+                                            FileOpener.openWithChooser(context, decryptedItem)
+                                        }
+                                    },
                                     onRestore = { showRestoreConfirmTarget = item },
                                     onDelete = { showDeleteConfirmTarget = item }
                                 )
@@ -448,6 +472,78 @@ fun VaultScreen(viewModel: ExplorerViewModel) {
             confirmButton = {
                 TextButton(onClick = { showVaultSettings = false }) {
                     Text("Done")
+                }
+            }
+        )
+    }
+
+    if (showForgotPinDialog) {
+        AlertDialog(
+            onDismissRequest = { showForgotPinDialog = false },
+            title = {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Default.LockReset, contentDescription = null, tint = MiOrange)
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Reset Vault PIN")
+                }
+            },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text(
+                        text = "Question: What is your favorite city?",
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                    OutlinedTextField(
+                        value = recoveryAnswer,
+                        onValueChange = {
+                            recoveryAnswer = it
+                            recoveryError = null
+                        },
+                        label = { Text("Security Answer") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    OutlinedTextField(
+                        value = recoveryNewPin,
+                        onValueChange = { input ->
+                            val digitsOnly = input.filter { it.isDigit() }.take(4)
+                            recoveryNewPin = digitsOnly
+                            recoveryError = null
+                        },
+                        label = { Text("New 4-Digit PIN") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    if (recoveryError != null) {
+                        Text(
+                            text = recoveryError!!,
+                            color = MaterialTheme.colorScheme.error,
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        if (recoveryNewPin.length != 4) {
+                            recoveryError = "Please enter a valid 4-digit PIN."
+                        } else if (viewModel.resetVaultPinWithAnswer(recoveryAnswer, recoveryNewPin)) {
+                            showForgotPinDialog = false
+                            pinInput = ""
+                        } else {
+                            recoveryError = "Incorrect security answer. Please try again."
+                        }
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = MiOrange)
+                ) {
+                    Text("Reset & Unlock")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showForgotPinDialog = false }) {
+                    Text("Cancel")
                 }
             }
         )

@@ -224,6 +224,18 @@ fun FastShareScreen(
                                 Text("Pick Files", style = MaterialTheme.typography.labelMedium)
                             }
                         }
+
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        OutlinedButton(
+                            onClick = { viewModel.openWebShare() },
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Icon(Icons.Default.CloudUpload, contentDescription = null, tint = Color(0xFF2563EB), modifier = Modifier.size(18.dp))
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("Receive Files / 2-Way Browser Portal", style = MaterialTheme.typography.labelMedium)
+                        }
                     }
                 }
             }

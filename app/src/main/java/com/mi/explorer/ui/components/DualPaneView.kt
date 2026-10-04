@@ -1,8 +1,10 @@
 package com.mi.explorer.ui.components
 
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -38,6 +40,13 @@ fun DualPaneView(
     onBackB: () -> Unit,
     onCopyAtoB: () -> Unit,
     onCopyBtoA: () -> Unit,
+    onMoveAtoB: () -> Unit = {},
+    onMoveBtoA: () -> Unit = {},
+    onToggleSelectA: (FileItem) -> Unit = {},
+    onToggleSelectB: (FileItem) -> Unit = {},
+    onClearSelectA: () -> Unit = {},
+    onClearSelectB: () -> Unit = {},
+    onOpenFile: (FileItem) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     BoxWithConstraints(modifier = modifier.fillMaxSize()) {
@@ -54,6 +63,10 @@ fun DualPaneView(
                     onNavigate = onNavigateA,
                     onBack = onBackA,
                     onCopyToOther = onCopyAtoB,
+                    onMoveToOther = onMoveAtoB,
+                    onToggleSelect = onToggleSelectA,
+                    onClearSelection = onClearSelectA,
+                    onOpenFile = onOpenFile,
                     modifier = Modifier
                         .weight(1f)
                         .fillMaxHeight()
@@ -69,6 +82,10 @@ fun DualPaneView(
                     onNavigate = onNavigateB,
                     onBack = onBackB,
                     onCopyToOther = onCopyBtoA,
+                    onMoveToOther = onMoveBtoA,
+                    onToggleSelect = onToggleSelectB,
+                    onClearSelection = onClearSelectB,
+                    onOpenFile = onOpenFile,
                     modifier = Modifier
                         .weight(1f)
                         .fillMaxHeight()
@@ -85,6 +102,10 @@ fun DualPaneView(
                     onNavigate = onNavigateA,
                     onBack = onBackA,
                     onCopyToOther = onCopyAtoB,
+                    onMoveToOther = onMoveAtoB,
+                    onToggleSelect = onToggleSelectA,
+                    onClearSelection = onClearSelectA,
+                    onOpenFile = onOpenFile,
                     modifier = Modifier
                         .weight(1f)
                         .fillMaxWidth()
@@ -100,6 +121,10 @@ fun DualPaneView(
                     onNavigate = onNavigateB,
                     onBack = onBackB,
                     onCopyToOther = onCopyBtoA,
+                    onMoveToOther = onMoveBtoA,
+                    onToggleSelect = onToggleSelectB,
+                    onClearSelection = onClearSelectB,
+                    onOpenFile = onOpenFile,
                     modifier = Modifier
                         .weight(1f)
                         .fillMaxWidth()
@@ -109,6 +134,7 @@ fun DualPaneView(
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun SinglePaneContainer(
     title: String,
@@ -118,6 +144,10 @@ fun SinglePaneContainer(
     onNavigate: (File) -> Unit,
     onBack: () -> Unit,
     onCopyToOther: () -> Unit,
+    onMoveToOther: () -> Unit,
+    onToggleSelect: (FileItem) -> Unit,
+    onClearSelection: () -> Unit,
+    onOpenFile: (FileItem) -> Unit,
     modifier: Modifier = Modifier
 ) {
     Column(
@@ -178,14 +208,29 @@ fun SinglePaneContainer(
                 }
 
                 if (state.selectedItems.isNotEmpty()) {
-                    FilledTonalButton(
-                        onClick = onCopyToOther,
-                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
-                        modifier = Modifier.height(28.dp)
-                    ) {
-                        Icon(Icons.Default.ContentCopy, contentDescription = null, modifier = Modifier.size(14.dp))
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text("Copy (${state.selectedItems.size})", fontSize = 11.sp)
+                    Row(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
+                        FilledTonalButton(
+                            onClick = onCopyToOther,
+                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                            modifier = Modifier.height(28.dp)
+                        ) {
+                            Icon(Icons.Default.ContentCopy, contentDescription = null, modifier = Modifier.size(13.dp))
+                            Spacer(modifier = Modifier.width(3.dp))
+                            Text("Copy (${state.selectedItems.size})", fontSize = 10.sp)
+                        }
+                        FilledTonalButton(
+                            onClick = onMoveToOther,
+                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                            colors = ButtonDefaults.filledTonalButtonColors(containerColor = MiOrange.copy(alpha = 0.2f)),
+                            modifier = Modifier.height(28.dp)
+                        ) {
+                            Icon(Icons.Default.DriveFileMove, contentDescription = null, tint = MiOrange, modifier = Modifier.size(13.dp))
+                            Spacer(modifier = Modifier.width(3.dp))
+                            Text("Move", fontSize = 10.sp, color = MiOrange)
+                        }
+                        IconButton(onClick = onClearSelection, modifier = Modifier.size(24.dp)) {
+                            Icon(Icons.Default.Close, contentDescription = "Clear selection", modifier = Modifier.size(14.dp))
+                        }
                     }
                 }
             }
@@ -197,18 +242,41 @@ fun SinglePaneContainer(
             contentPadding = PaddingValues(vertical = 4.dp)
         ) {
             items(state.items, key = { it.path }) { item ->
+                val isSelected = state.selectedItems.contains(item)
                 val (itemIcon, itemColor) = getFileItemIconAndColor(item)
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .clickable {
-                            if (item.isDirectory) {
-                                onNavigate(item.file)
+                        .background(if (isSelected) MiOrange.copy(alpha = 0.14f) else Color.Transparent)
+                        .combinedClickable(
+                            onClick = {
+                                onClick()
+                                if (state.isSelectionMode) {
+                                    onToggleSelect(item)
+                                } else if (item.isDirectory) {
+                                    onNavigate(item.file)
+                                } else {
+                                    onOpenFile(item)
+                                }
+                            },
+                            onLongClick = {
+                                onClick()
+                                onToggleSelect(item)
                             }
-                        }
-                        .padding(horizontal = 12.dp, vertical = 6.dp),
+                        )
+                        .padding(horizontal = 10.dp, vertical = 6.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
+                    Checkbox(
+                        checked = isSelected,
+                        onCheckedChange = {
+                            onClick()
+                            onToggleSelect(item)
+                        },
+                        colors = CheckboxDefaults.colors(checkedColor = MiOrange),
+                        modifier = Modifier.size(28.dp)
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
                     Icon(
                         imageVector = itemIcon,
                         contentDescription = null,
