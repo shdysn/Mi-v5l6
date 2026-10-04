@@ -1376,10 +1376,21 @@ class ExplorerViewModel(application: Application) : AndroidViewModel(application
         }
     }
 
-    fun extractZipArchive(zipFile: File, targetDir: File, selectedEntries: Set<String>? = null) {
+    fun extractZipArchive(
+        zipFile: File,
+        targetDir: File,
+        selectedEntries: Set<String>? = null,
+        password: String? = null
+    ) {
         viewModelScope.launch {
             isZipExtracting.value = true
-            val res = ArchiveHelper.extractArchive(zipFile, targetDir, onProgress = { _, _ -> })
+            val res = ArchiveHelper.extractArchive(
+                file = zipFile,
+                destDir = targetDir,
+                password = password,
+                selectedPaths = selectedEntries,
+                onProgress = { _, _ -> }
+            )
             isZipExtracting.value = false
             res.fold(
                 onSuccess = {
@@ -1394,10 +1405,22 @@ class ExplorerViewModel(application: Application) : AndroidViewModel(application
         }
     }
 
-    fun compressFilesToZip(items: List<File>, destinationZip: File, compressionLevel: Int) {
+    fun compressFilesToZip(
+        items: List<File>,
+        destinationZip: File,
+        compressionLevel: Int,
+        format: com.mi.explorer.utils.ArchiveType = com.mi.explorer.utils.ArchiveType.ZIP,
+        password: String? = null
+    ) {
         viewModelScope.launch {
             showMessage("Compressing ${items.size} items...")
-            val res = zipRepository.compressFiles(items, destinationZip, compressionLevel)
+            val res = ArchiveHelper.compressArchive(
+                items = items,
+                destinationFile = destinationZip,
+                format = format,
+                compressionLevel = compressionLevel,
+                password = password
+            )
             res.fold(
                 onSuccess = { createdFile ->
                     showMessage("Created ${createdFile.name} (${FileItem.formatBytes(createdFile.length())})")

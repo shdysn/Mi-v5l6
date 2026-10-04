@@ -252,6 +252,10 @@ fun MainScreen(
                                 }
                                 "open_with" -> openWithTarget = item
                                 "toggle_favorite" -> viewModel.toggleFavorite(item.file)
+                                "pin_home" -> {
+                                    val pinned = com.mi.explorer.utils.ShortcutHelper.pinFileOrFolderToHomeScreen(context, item)
+                                    viewModel.showMessage(if (pinned) "Shortcut request sent to Home Screen" else "Pinned shortcut not supported on this launcher")
+                                }
                                 "checksum" -> checksumTarget = item
                                 "vault" -> viewModel.addFileToVault(item)
                                 "tags" -> tagTarget = item
@@ -319,6 +323,10 @@ fun MainScreen(
                         onVaultClick = { viewModel.openVault() },
                         onDuplicatesClick = { viewModel.openDuplicateFinder() },
                         onAnalyzerClick = { viewModel.openStorageAnalyzer() },
+                        onPinWidgetClick = {
+                            val ok = com.mi.explorer.utils.ShortcutHelper.requestPinStorageWidget(context)
+                            viewModel.showMessage(if (ok) "Home Screen Storage Widget prompt opened!" else "Long-press Home Screen -> Widgets -> Mi Explorer")
+                        },
                         onBatchRename = { showBatchRenameDialog = true },
                         onNavigateTo = { viewModel.loadDirectory(it, addToHistory = true) },
                         onNavigateUp = {
@@ -362,6 +370,10 @@ fun MainScreen(
                                 }
                                 "open_with" -> openWithTarget = item
                                 "toggle_favorite" -> viewModel.toggleFavorite(item.file)
+                                "pin_home" -> {
+                                    val pinned = com.mi.explorer.utils.ShortcutHelper.pinFileOrFolderToHomeScreen(context, item)
+                                    viewModel.showMessage(if (pinned) "Shortcut request sent to Home Screen" else "Pinned shortcut not supported on this launcher")
+                                }
                                 "checksum" -> checksumTarget = item
                                 "vault" -> viewModel.addFileToVault(item)
                                 "tags" -> tagTarget = item
@@ -636,6 +648,11 @@ fun MainScreen(
             onCompress = { name, level ->
                 val destFile = File(storageState.currentDir, name)
                 viewModel.compressFilesToZip(targets.map { it.file }, destFile, level)
+                zipTargets = null
+            },
+            onCompressPro = { name, format, level, password ->
+                val destFile = File(storageState.currentDir, name)
+                viewModel.compressFilesToZip(targets.map { it.file }, destFile, level, format, password)
                 zipTargets = null
             }
         )
@@ -991,6 +1008,7 @@ fun StorageTabContent(
     onVaultClick: () -> Unit,
     onDuplicatesClick: () -> Unit,
     onAnalyzerClick: () -> Unit,
+    onPinWidgetClick: () -> Unit = {},
     onBatchRename: () -> Unit,
     onNavigateTo: (File) -> Unit,
     onNavigateUp: () -> Unit,
@@ -1096,6 +1114,15 @@ fun StorageTabContent(
                         contentPadding = PaddingValues(horizontal = 16.dp),
                         horizontalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
+                        item {
+                            UtilityCard(
+                                title = "Home Widget",
+                                subtitle = "Pin Storage Card",
+                                icon = Icons.Default.Widgets,
+                                color = Color(0xFF0EA5E9),
+                                onClick = onPinWidgetClick
+                            )
+                        }
                         item {
                             UtilityCard(
                                 title = "App Installer",
@@ -1623,7 +1650,8 @@ fun StorageTabContent(
             onFtpClick = onFtpClick,
             onDualPaneToggle = onDualPaneToggle,
             isDualPaneActive = isDualPaneActive,
-            onSocialClick = onSocialClick
+            onSocialClick = onSocialClick,
+            onPinWidgetClick = onPinWidgetClick
         )
     }
 }

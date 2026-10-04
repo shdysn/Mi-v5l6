@@ -10,11 +10,14 @@ import android.media.AudioManager
 import android.media.MediaMetadataRetriever
 import android.media.MediaPlayer
 import android.media.PlaybackParams
+import android.media.audiofx.BassBoost
+import android.media.audiofx.Equalizer
 import android.media.audiofx.LoudnessEnhancer
 import android.net.Uri
 import android.os.BatteryManager
 import android.os.Build
 import android.os.Environment
+import android.util.Rational
 import android.view.WindowManager
 import android.widget.VideoView
 import androidx.activity.compose.BackHandler
@@ -24,17 +27,18 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.*
-import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.*
 import androidx.compose.material.icons.filled.*
@@ -49,11 +53,13 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shadow
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.positionChanged
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
@@ -73,10 +79,12 @@ import androidx.core.view.WindowInsetsControllerCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.mi.explorer.data.model.FileItem
 import com.mi.explorer.ui.viewmodel.ExplorerViewModel
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.FileOutputStream
 import java.text.SimpleDateFormat
@@ -142,13 +150,14 @@ fun VideoPlayerScreen(
     var videoViewRef by remember { mutableStateOf<VideoView?>(null) }
     var mediaPlayerRef by remember { mutableStateOf<MediaPlayer?>(null) }
     var loudnessEnhancerRef by remember { mutableStateOf<LoudnessEnhancer?>(null) }
+    var equalizerRef by remember { mutableStateOf<Equalizer?>(null) }
+    var bassBoostRef by remember { mutableStateOf<BassBoost?>(null) }
     var isCompleted by remember { mutableStateOf(false) }
 
     // MX Player Pro Features State
     var isLocked by remember { mutableStateOf(false) }
     var showLockOverlayHint by remember { mutableStateOf(false) }
     var isMuted by remember { mutableStateOf(false) }
-    var previousVolumePercent by remember { mutableIntStateOf(70) }
     var volumePercent by remember {
         val cur = audioManager.getStreamVolume(AudioManager.STREAM_MUSIC)
         mutableIntStateOf(((cur.toFloat() / maxSystemVolume) * 100).roundToInt().coerceIn(0, 100))
@@ -161,6 +170,13 @@ fun VideoPlayerScreen(
     var isNightMode by remember { mutableStateOf(false) }
     var nightModeIntensity by remember { mutableFloatStateOf(0.40f) }
     var isBackgroundPlay by remember { mutableStateOf(false) }
+
+    // 5-Band Graphical Equalizer & DSP State (60Hz, 230Hz, 910Hz, 3.6kHz, 14kHz in dB: -15..+15)
+    val eqBandLabels = remember { listOf("60Hz", "230Hz", "910Hz", "3.6kHz", "14kHz") }
+    var eqBandsDb by remember { mutableStateOf(listOf(3f, 1f, 0f, 2f, 3f)) }
+    var bassBoostPercent by remember { mutableIntStateOf(35) }
+    var surroundPercent by remember { mutableIntStateOf(40) }
+    var selectedEqualizerPreset by remember { mutableStateOf("MX Cinema Surround") }
 
     // A-B Repeat Loop State
     var loopPointA by remember { mutableStateOf<Int?>(null) }
@@ -176,7 +192,6 @@ fun VideoPlayerScreen(
     var showAudioBoostSheet by remember { mutableStateOf(false) }
     var showSubtitleSheet by remember { mutableStateOf(false) }
     var showSleepTimerDialog by remember { mutableStateOf(false) }
-    var selectedEqualizerPreset by remember { mutableStateOf("MX Cinema Surround") }
 
     // Subtitle State & Customization
     var isSubtitlesEnabled by remember { mutableStateOf(false) }
@@ -223,6 +238,46 @@ fun VideoPlayerScreen(
     var hudCenterBadgeText by remember { mutableStateOf<String?>(null) }
     var hudCenterBadgeJob by remember { mutableStateOf<Job?>(null) }
 
+    // Live Scrub Frame Thumbnail Preview State
+    var scrubPreviewBitmap by remember { mutableStateOf<Bitmap?>(null) }
+    val activeScrubMs = when {
+        isSeeking >= 0f -> isSeeking.roundToInt()
+        hudSeekTargetMs != null -> hudSeekTargetMs
+        else -> null
+    }
+
+    LaunchedEffect(activeScrubMs, file?.absolutePath) {
+        val targetMs = activeScrubMs
+        if (targetMs == null || file == null || !file.exists()) {
+            if (targetMs == null) scrubPreviewBitmap = null
+            return@LaunchedEffect
+        }
+        delay(65) // Debounce fast finger drags
+        val bmp = withContext(Dispatchers.IO) {
+            try {
+                val retriever = MediaMetadataRetriever()
+                retriever.setDataSource(file.absolutePath)
+                val frame = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
+                    retriever.getScaledFrameAtTime(
+                        targetMs * 1000L,
+                        MediaMetadataRetriever.OPTION_CLOSEST_SYNC,
+                        240,
+                        135
+                    )
+                } else {
+                    retriever.getFrameAtTime(targetMs * 1000L, MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
+                }
+                retriever.release()
+                frame
+            } catch (_: Exception) {
+                null
+            }
+        }
+        if (bmp != null) {
+            scrubPreviewBitmap = bmp
+        }
+    }
+
     fun triggerCenterBadge(text: String) {
         hudCenterBadgeJob?.cancel()
         hudCenterBadgeText = text
@@ -254,10 +309,33 @@ fun VideoPlayerScreen(
                 if (!wasPlaying && !isPlaying) {
                     mp.pause()
                 }
-            } catch (_: Exception) {
-                // Ignore if codec does not support speed change
-            }
+            } catch (_: Exception) {}
         }
+    }
+
+    // Apply Hardware 5-Band Equalizer & BassBoost to MediaPlayer AudioSession
+    LaunchedEffect(eqBandsDb, bassBoostPercent, mediaPlayerRef) {
+        val mp = mediaPlayerRef ?: return@LaunchedEffect
+        try {
+            if (equalizerRef == null) {
+                equalizerRef = Equalizer(0, mp.audioSessionId).apply { enabled = true }
+            }
+            val eq = equalizerRef
+            if (eq != null) {
+                val numBands = eq.numberOfBands.toInt()
+                val range = eq.bandLevelRange
+                val minMb = range[0].toInt()
+                val maxMb = range[1].toInt()
+                for (i in 0 until minOf(numBands, eqBandsDb.size)) {
+                    val targetMb = (eqBandsDb[i] * 100f).roundToInt().coerceIn(minMb, maxMb).toShort()
+                    eq.setBandLevel(i.toShort(), targetMb)
+                }
+            }
+            if (bassBoostRef == null) {
+                bassBoostRef = BassBoost(0, mp.audioSessionId).apply { enabled = true }
+            }
+            bassBoostRef?.setStrength((bassBoostPercent * 10).coerceIn(0, 1000).toShort())
+        } catch (_: Exception) {}
     }
 
     // Apply Volume + 200% SW Audio Boost (LoudnessEnhancer)
@@ -273,17 +351,52 @@ fun VideoPlayerScreen(
                 loudnessEnhancerRef?.enabled = false
             } catch (_: Exception) {}
         } else {
-            // Max out hardware volume and apply DSP LoudnessEnhancer up to +1500mB for 101%..200%
             audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, maxSystemVolume, 0)
             try {
                 val mp = mediaPlayerRef
                 if (loudnessEnhancerRef == null && mp != null) {
                     loudnessEnhancerRef = LoudnessEnhancer(mp.audioSessionId)
                 }
-                val boostGainMb = (clamped - 100) * 15 // up to 1500 mB
+                val boostGainMb = (clamped - 100) * 15
                 loudnessEnhancerRef?.setTargetGain(boostGainMb)
                 loudnessEnhancerRef?.enabled = true
             } catch (_: Exception) {}
+        }
+    }
+
+    fun applyEqualizerPreset(presetName: String) {
+        selectedEqualizerPreset = presetName
+        when (presetName) {
+            "MX Cinema Surround" -> {
+                eqBandsDb = listOf(5f, 3f, 0f, 3f, 5f)
+                bassBoostPercent = 55
+                surroundPercent = 75
+            }
+            "Dialogue Clear" -> {
+                eqBandsDb = listOf(-2f, 2f, 6f, 5f, 1f)
+                bassBoostPercent = 15
+                surroundPercent = 25
+            }
+            "Bass Boost+" -> {
+                eqBandsDb = listOf(9f, 6f, 0f, 1f, 2f)
+                bassBoostPercent = 90
+                surroundPercent = 50
+            }
+            "Headphones 3D" -> {
+                eqBandsDb = listOf(4f, 2f, -1f, 4f, 6f)
+                bassBoostPercent = 50
+                surroundPercent = 90
+            }
+            "Night Late Compression" -> {
+                eqBandsDb = listOf(-4f, 1f, 4f, 3f, -2f)
+                bassBoostPercent = 10
+                surroundPercent = 20
+            }
+            else -> {
+                eqBandsDb = listOf(0f, 0f, 0f, 0f, 0f)
+                bassBoostPercent = 0
+                surroundPercent = 0
+            }
         }
     }
 
@@ -347,9 +460,9 @@ fun VideoPlayerScreen(
                 if (prevStatusColor != null) window.statusBarColor = prevStatusColor
                 if (prevNavColor != null) window.navigationBarColor = prevNavColor
             }
-            try {
-                loudnessEnhancerRef?.release()
-            } catch (_: Exception) {}
+            try { loudnessEnhancerRef?.release() } catch (_: Exception) {}
+            try { equalizerRef?.release() } catch (_: Exception) {}
+            try { bassBoostRef?.release() } catch (_: Exception) {}
         }
     }
 
@@ -441,7 +554,6 @@ fun VideoPlayerScreen(
         val containerWidthPx = with(density) { maxWidth.toPx().coerceAtLeast(1f) }
         val containerHeightPx = with(density) { maxHeight.toPx().coerceAtLeast(1f) }
 
-        // Calculate Aspect Ratio Scale Factors for Video Container
         val videoAspect = remember(videoWidth, videoHeight) {
             if (videoHeight > 0 && videoWidth > 0) videoWidth.toFloat() / videoHeight.toFloat() else 16f / 9f
         }
@@ -548,12 +660,12 @@ fun VideoPlayerScreen(
             )
         }
 
-        // 3. MX Player Subtitles Overlay (Customizable Size, Color & Bottom Offset)
+        // 3. MX Player Subtitles Overlay
         if (isSubtitlesEnabled && !currentSubtitleText.isNullOrBlank()) {
             val subColor = when (subtitleColorIndex) {
-                1 -> Color(0xFFFFEA00) // Classic Cinema Yellow
-                2 -> Color(0xFF00E5FF) // Aqua Cyan
-                else -> Color.White    // Crisp White
+                1 -> Color(0xFFFFEA00)
+                2 -> Color(0xFF00E5FF)
+                else -> Color.White
             }
             Box(
                 modifier = Modifier
@@ -581,9 +693,6 @@ fun VideoPlayerScreen(
         }
 
         // 4. Unified MX Player Multi-Gesture Touch Layer
-        // Supports: Tap, Double-Tap (-10s / Play-Pause / +10s), Long-Press 2X Speed,
-        // Vertical Swipe (Left=Brightness, Right=Volume+200% Boost),
-        // Horizontal Swipe (Smooth Video Scrubbing), and Two-Finger Pinch-to-Zoom & Pan!
         Box(
             modifier = Modifier
                 .fillMaxSize()
@@ -650,7 +759,7 @@ fun VideoPlayerScreen(
 
                     awaitEachGesture {
                         val firstDown = awaitFirstDown(requireUnconsumed = false)
-                        var dragMode = 0 // 0 = undecided, 1 = brightness, 2 = volume, 3 = horizontal seek, 4 = pinch zoom
+                        var dragMode = 0
                         var totalDx = 0f
                         var totalDy = 0f
                         val startX = firstDown.position.x
@@ -662,7 +771,6 @@ fun VideoPlayerScreen(
                             val activePointers = event.changes.filter { it.pressed }
 
                             if (activePointers.size >= 2) {
-                                // Two-Finger Pinch-to-Zoom & Pan
                                 dragMode = 4
                                 val zoomChange = event.calculateZoom()
                                 val panChange = event.calculatePan()
@@ -688,11 +796,11 @@ fun VideoPlayerScreen(
                                 val touchSlop = viewConfiguration.touchSlop
                                 if (dragMode == 0 && (abs(totalDx) > touchSlop || abs(totalDy) > touchSlop)) {
                                     dragMode = if (abs(totalDx) > abs(totalDy) * 1.25f) {
-                                        3 // Horizontal Seek Scrub
+                                        3
                                     } else if (startX < size.width * 0.5f) {
-                                        1 // Left Vertical: Brightness
+                                        1
                                     } else {
-                                        2 // Right Vertical: Volume + Boost
+                                        2
                                     }
                                 }
 
@@ -731,7 +839,6 @@ fun VideoPlayerScreen(
                             }
                         } while (event.changes.any { it.pressed })
 
-                        // Commit Horizontal Seek if active
                         hudSeekTargetMs?.let { target ->
                             videoViewRef?.seekTo(target)
                             currentPos = target
@@ -776,7 +883,7 @@ fun VideoPlayerScreen(
                 }
             }
 
-            // 5b. Floating Reset Zoom Chip (When zoomed in/out)
+            // 5b. Floating Reset Zoom Chip
             AnimatedVisibility(
                 visible = abs(zoomScale - 1.0f) > 0.03f && !isLocked,
                 enter = fadeIn(),
@@ -836,7 +943,7 @@ fun VideoPlayerScreen(
                 MxDoubleTapBubble(icon = Icons.Default.Forward10, label = "+10 sec")
             }
 
-            // 5d. MX Player Signature Vertical Bar HUD for Brightness (Displayed on Right when swiping Left, or Left side)
+            // 5d. MX Vertical Bar HUD for Brightness
             hudBrightness?.let { b ->
                 MxVerticalBarHud(
                     icon = if (b < 0.35f) Icons.Default.BrightnessLow else if (b < 0.75f) Icons.Default.BrightnessMedium else Icons.Default.BrightnessHigh,
@@ -850,7 +957,7 @@ fun VideoPlayerScreen(
                 )
             }
 
-            // 5e. MX Player Signature Vertical Bar HUD for Volume & 200% SW Boost
+            // 5e. MX Vertical Bar HUD for Volume & 200% SW Boost
             hudVolumePercent?.let { volPct ->
                 val isBoost = volPct > 100
                 MxVerticalBarHud(
@@ -870,37 +977,49 @@ fun VideoPlayerScreen(
                 )
             }
 
-            // 5f. MX Player Center Horizontal Seek Scrubbing Preview Box
+            // 5f. MX Player Center Horizontal Seek Scrubbing Preview Box with Live Frame Thumbnail
             hudSeekTargetMs?.let { targetMs ->
                 Surface(
                     shape = RoundedCornerShape(16.dp),
-                    color = Color.Black.copy(alpha = 0.85f),
-                    border = BorderStroke(1.dp, Color.White.copy(alpha = 0.18f)),
+                    color = Color.Black.copy(alpha = 0.88f),
+                    border = BorderStroke(1.dp, MxBlue.copy(alpha = 0.5f)),
                     modifier = Modifier.align(Alignment.Center)
                 ) {
                     Column(
                         modifier = Modifier
-                            .padding(horizontal = 24.dp, vertical = 14.dp)
-                            .widthIn(min = 160.dp),
+                            .padding(horizontal = 18.dp, vertical = 12.dp)
+                            .widthIn(min = 170.dp),
                         horizontalAlignment = Alignment.CenterHorizontally
                     ) {
+                        scrubPreviewBitmap?.let { bmp ->
+                            Image(
+                                bitmap = bmp.asImageBitmap(),
+                                contentDescription = "Scrub Frame Preview",
+                                modifier = Modifier
+                                    .width(148.dp)
+                                    .height(84.dp)
+                                    .clip(RoundedCornerShape(10.dp)),
+                                contentScale = ContentScale.Crop
+                            )
+                            Spacer(modifier = Modifier.height(8.dp))
+                        }
                         val deltaSign = if (hudSeekDeltaMs >= 0) "+" else "-"
                         Text(
                             text = "$deltaSign${formatTime(abs(hudSeekDeltaMs))}",
                             color = if (hudSeekDeltaMs >= 0) MxBlue else MxAmber,
                             fontWeight = FontWeight.Bold,
-                            fontSize = 15.sp,
+                            fontSize = 14.sp,
                             fontFamily = FontFamily.Monospace
                         )
-                        Spacer(modifier = Modifier.height(4.dp))
+                        Spacer(modifier = Modifier.height(2.dp))
                         Text(
                             text = "${formatTime(targetMs)} / ${formatTime(duration)}",
                             color = Color.White,
                             fontWeight = FontWeight.ExtraBold,
-                            fontSize = 20.sp,
+                            fontSize = 18.sp,
                             fontFamily = FontFamily.Monospace
                         )
-                        Spacer(modifier = Modifier.height(8.dp))
+                        Spacer(modifier = Modifier.height(6.dp))
                         LinearProgressIndicator(
                             progress = { (targetMs.toFloat() / duration.coerceAtLeast(1)).coerceIn(0f, 1f) },
                             modifier = Modifier
@@ -914,7 +1033,7 @@ fun VideoPlayerScreen(
                 }
             }
 
-            // 5g. MX Center Mode Badge (Aspect Ratio / Decoder / Zoom / A-B Loop)
+            // 5g. MX Center Mode Badge
             AnimatedVisibility(
                 visible = hudCenterBadgeText != null && hudSeekTargetMs == null,
                 enter = fadeIn(tween(150)) + scaleIn(tween(150)),
@@ -937,7 +1056,7 @@ fun VideoPlayerScreen(
             }
         }
 
-        // 6. MX Player Dual-Corner Screen Lock Overlay (When Locked)
+        // 6. MX Player Dual-Corner Screen Lock Overlay
         AnimatedVisibility(
             visible = isLocked && showLockOverlayHint,
             enter = fadeIn(),
@@ -945,7 +1064,6 @@ fun VideoPlayerScreen(
             modifier = Modifier.fillMaxSize()
         ) {
             Box(modifier = Modifier.fillMaxSize()) {
-                // Top-Left Unlock Button
                 Surface(
                     shape = RoundedCornerShape(14.dp),
                     color = Color.Black.copy(alpha = 0.82f),
@@ -971,7 +1089,6 @@ fun VideoPlayerScreen(
                     }
                 }
 
-                // Bottom-Right Unlock Icon (Classic MX Dual-Lock Accessibility)
                 Surface(
                     shape = CircleShape,
                     color = Color.Black.copy(alpha = 0.82f),
@@ -995,7 +1112,7 @@ fun VideoPlayerScreen(
             }
         }
 
-        // 7. MX Player Pro Full HUD Overlay (Top Gradient Header + Quick Pill Ribbon + Subtle Center + Bottom Precision Bar)
+        // 7. MX Player Pro Full HUD Overlay
         AnimatedVisibility(
             visible = showControls && !isLocked,
             enter = fadeIn(tween(180)),
@@ -1021,7 +1138,6 @@ fun VideoPlayerScreen(
                         .windowInsetsPadding(WindowInsets.statusBars)
                         .padding(bottom = 20.dp)
                 ) {
-                    // Primary MX Header Row
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -1039,7 +1155,6 @@ fun VideoPlayerScreen(
                             Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = Color.White)
                         }
 
-                        // Video Title + Single-Line Technical Metadata Row
                         Column(
                             modifier = Modifier
                                 .weight(1f)
@@ -1061,7 +1176,6 @@ fun VideoPlayerScreen(
                                 verticalAlignment = Alignment.CenterVertically,
                                 horizontalArrangement = Arrangement.spacedBy(6.dp)
                             ) {
-                                // Compact Single-Line Resolution Badge
                                 Surface(
                                     shape = RoundedCornerShape(4.dp),
                                     color = if (resolutionBadge.startsWith("4K")) MxAmber else MxBlue.copy(alpha = 0.25f),
@@ -1077,7 +1191,6 @@ fun VideoPlayerScreen(
                                     )
                                 }
 
-                                // Format Extension
                                 Text(
                                     text = (file?.extension?.uppercase() ?: "MP4"),
                                     color = Color.White.copy(alpha = 0.75f),
@@ -1086,7 +1199,6 @@ fun VideoPlayerScreen(
                                     maxLines = 1
                                 )
 
-                                // MX Battery & Clock Readout
                                 Text(
                                     text = "• $batteryLevel% • $currentClockText",
                                     color = Color.White.copy(alpha = 0.65f),
@@ -1120,15 +1232,15 @@ fun VideoPlayerScreen(
                             )
                         }
 
-                        // Audio Track & 200% Boost Button
+                        // Audio Track & 5-Band Equalizer Button
                         IconButton(
                             onClick = { showAudioBoostSheet = true },
                             modifier = Modifier.size(40.dp)
                         ) {
                             Icon(
-                                imageVector = Icons.Default.Audiotrack,
-                                contentDescription = "Audio & Boost",
-                                tint = if (volumePercent > 100) MxAmber else Color.White,
+                                imageVector = Icons.Default.Equalizer,
+                                contentDescription = "5-Band Equalizer & Boost",
+                                tint = if (volumePercent > 100) MxAmber else MxCyan,
                                 modifier = Modifier.size(22.dp)
                             )
                         }
@@ -1160,7 +1272,7 @@ fun VideoPlayerScreen(
                         }
                     }
 
-                    // Secondary MX Player Quick-Action Pill Strip (Horizontally Scrollable)
+                    // Secondary MX Player Quick-Action Pill Strip
                     AnimatedVisibility(visible = showQuickRibbon) {
                         LazyRow(
                             modifier = Modifier.fillMaxWidth(),
@@ -1168,7 +1280,6 @@ fun VideoPlayerScreen(
                             horizontalArrangement = Arrangement.spacedBy(8.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            // 1. Speed Pill
                             item {
                                 MxQuickActionChip(
                                     icon = Icons.Default.Speed,
@@ -1178,22 +1289,16 @@ fun VideoPlayerScreen(
                                 )
                             }
 
-                            // 2. Audio Boost / Mute Pill
                             item {
                                 MxQuickActionChip(
-                                    icon = if (isMuted) Icons.Default.VolumeOff else Icons.Default.VolumeUp,
-                                    label = when {
-                                        isMuted -> "Muted"
-                                        volumePercent > 100 -> "Boost $volumePercent%"
-                                        else -> "Vol $volumePercent%"
-                                    },
-                                    isActive = volumePercent > 100 || isMuted,
-                                    activeColor = if (isMuted) Color(0xFFEF4444) else MxAmber,
+                                    icon = Icons.Default.Equalizer,
+                                    label = if (volumePercent > 100) "EQ • $volumePercent% Boost" else "5-Band EQ",
+                                    isActive = volumePercent > 100 || selectedEqualizerPreset != "Flat / Direct",
+                                    activeColor = if (volumePercent > 100) MxAmber else MxBlue,
                                     onClick = { showAudioBoostSheet = true }
                                 )
                             }
 
-                            // 3. Background Play Pill
                             item {
                                 MxQuickActionChip(
                                     icon = Icons.Default.Headphones,
@@ -1206,7 +1311,6 @@ fun VideoPlayerScreen(
                                 )
                             }
 
-                            // 4. A-B Repeat Loop Pill
                             item {
                                 val abLabel = when {
                                     loopPointA != null && loopPointB != null -> "A-B (${formatTime(loopPointA!!)}-${formatTime(loopPointB!!)})"
@@ -1242,7 +1346,6 @@ fun VideoPlayerScreen(
                                 )
                             }
 
-                            // 5. Mirror / Flip Video Pill
                             item {
                                 MxQuickActionChip(
                                     icon = Icons.Default.Flip,
@@ -1255,7 +1358,6 @@ fun VideoPlayerScreen(
                                 )
                             }
 
-                            // 6. Night Mode Pill
                             item {
                                 MxQuickActionChip(
                                     icon = Icons.Default.DarkMode,
@@ -1268,21 +1370,19 @@ fun VideoPlayerScreen(
                                 )
                             }
 
-                            // 7. Frame Screenshot Capture Pill
                             item {
                                 MxQuickActionChip(
                                     icon = Icons.Default.PhotoCamera,
                                     label = "Screenshot",
                                     isActive = false,
                                     onClick = {
-                                        captureVideoScreenshot(context, file, currentPos, scope) { msg ->
+                                        captureVideoScreenshot(file, currentPos, scope) { msg ->
                                             viewModel.showMessage(msg)
                                         }
                                     }
                                 )
                             }
 
-                            // 8. Sleep Timer Pill
                             item {
                                 val timerLabel = sleepTimerRemainingSec?.let { "Timer ${formatTime(it * 1000)}" } ?: "Sleep Timer"
                                 MxQuickActionChip(
@@ -1293,7 +1393,6 @@ fun VideoPlayerScreen(
                                 )
                             }
 
-                            // 9. Playlist Queue Pill
                             item {
                                 MxQuickActionChip(
                                     icon = Icons.AutoMirrored.Filled.QueueMusic,
@@ -1307,14 +1406,12 @@ fun VideoPlayerScreen(
                 }
 
                 // ================ SUBTLE GLASSMORPHIC CENTER TRANSPORT ================
-                // Clean, semi-transparent glassmorphic circles that don't block the video
                 if (showCenterTransport && hudSeekTargetMs == null && hudCenterBadgeText == null) {
                     Row(
                         modifier = Modifier.align(Alignment.Center),
                         horizontalArrangement = Arrangement.spacedBy(32.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        // -10s Glass Circle
                         Surface(
                             shape = CircleShape,
                             color = Color.Black.copy(alpha = 0.45f),
@@ -1332,7 +1429,6 @@ fun VideoPlayerScreen(
                             }
                         }
 
-                        // Center Play / Pause Glass Circle
                         Surface(
                             shape = CircleShape,
                             color = Color.Black.copy(alpha = 0.55f),
@@ -1366,7 +1462,6 @@ fun VideoPlayerScreen(
                             }
                         }
 
-                        // +10s Glass Circle
                         Surface(
                             shape = CircleShape,
                             color = Color.Black.copy(alpha = 0.45f),
@@ -1403,7 +1498,6 @@ fun VideoPlayerScreen(
                         .windowInsetsPadding(WindowInsets.navigationBars)
                         .padding(top = 22.dp, start = 14.dp, end = 14.dp, bottom = 10.dp)
                 ) {
-                    // Row 1: Timestamps + Custom MX Precision SeekBar
                     val displayPos = if (isSeeking >= 0f) isSeeking.roundToInt() else currentPos
                     val progressFraction = (displayPos.toFloat() / duration.coerceAtLeast(1)).coerceIn(0f, 1f)
 
@@ -1425,6 +1519,7 @@ fun VideoPlayerScreen(
                             progress = progressFraction,
                             durationMs = duration.coerceAtLeast(1),
                             isScrubbing = isSeeking >= 0f,
+                            scrubPreviewBitmap = scrubPreviewBitmap,
                             loopAFraction = loopPointA?.let { (it.toFloat() / duration.coerceAtLeast(1)).coerceIn(0f, 1f) },
                             loopBFraction = loopPointB?.let { (it.toFloat() / duration.coerceAtLeast(1)).coerceIn(0f, 1f) },
                             onScrubChange = { frac ->
@@ -1470,7 +1565,6 @@ fun VideoPlayerScreen(
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        // Left Group: Lock + Screen Rotation
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             IconButton(
                                 onClick = {
@@ -1502,7 +1596,6 @@ fun VideoPlayerScreen(
                             }
                         }
 
-                        // Center Group: MX Transport (Prev | -10s | Play/Pause | +10s | Next)
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(6.dp)
@@ -1521,7 +1614,6 @@ fun VideoPlayerScreen(
                                 Icon(Icons.Default.Replay10, contentDescription = "Rewind 10s", tint = Color.White, modifier = Modifier.size(25.dp))
                             }
 
-                            // Primary Bottom MX Play / Pause Button
                             Surface(
                                 shape = CircleShape,
                                 color = MxBlue,
@@ -1568,13 +1660,14 @@ fun VideoPlayerScreen(
                             }
                         }
 
-                        // Right Group: PiP + Aspect Ratio Fit
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             IconButton(
                                 onClick = {
                                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                                         try {
-                                            activity?.enterPictureInPictureMode(PictureInPictureParams.Builder().build())
+                                            val paramsBuilder = PictureInPictureParams.Builder()
+                                                .setAspectRatio(Rational(videoWidth.coerceIn(100, 3840), videoHeight.coerceIn(100, 2160)))
+                                            activity?.enterPictureInPictureMode(paramsBuilder.build())
                                         } catch (_: Exception) {
                                             viewModel.showMessage("PiP mode activated")
                                         }
@@ -1586,7 +1679,6 @@ fun VideoPlayerScreen(
                                 Icon(Icons.Default.PictureInPictureAlt, contentDescription = "Picture in Picture", tint = Color.White, modifier = Modifier.size(22.dp))
                             }
 
-                            // Aspect Ratio Button with active badge
                             IconButton(
                                 onClick = {
                                     val values = VideoAspectRatio.values()
@@ -1659,7 +1751,6 @@ fun VideoPlayerScreen(
                     }
                 }
 
-                // Grid Row 1
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     PowerfulCard(
                         title = "Subtitle (CC)",
@@ -1673,7 +1764,7 @@ fun VideoPlayerScreen(
                         modifier = Modifier.weight(1f)
                     )
                     PowerfulCard(
-                        title = "Audio & Boost",
+                        title = "5-Band EQ",
                         subtitle = "$volumePercent% • $selectedEqualizerPreset",
                         icon = Icons.Default.Equalizer,
                         tint = if (volumePercent > 100) MxAmber else MxBlue,
@@ -1696,7 +1787,6 @@ fun VideoPlayerScreen(
                     )
                 }
 
-                // Grid Row 2
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     PowerfulCard(
                         title = "Mirror Video",
@@ -1738,7 +1828,6 @@ fun VideoPlayerScreen(
                     )
                 }
 
-                // Center Overlay Toggle & Quick Ribbon Toggle
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     PowerfulCard(
                         title = "Center Buttons",
@@ -1775,7 +1864,6 @@ fun VideoPlayerScreen(
                     )
                 }
 
-                // Background Play Banner
                 Surface(
                     shape = RoundedCornerShape(16.dp),
                     color = MxCardDark,
@@ -1822,7 +1910,7 @@ fun VideoPlayerScreen(
     }
 
     // =========================================================================
-    // 9. MX INTERACTIVE PLAYBACK SPEED SHEET (0.25x – 4.0x Slider + Chips)
+    // 9. MX INTERACTIVE PLAYBACK SPEED SHEET (0.25x – 3.0x Slider + Chips)
     // =========================================================================
     if (showSpeedSheet) {
         ModalBottomSheet(
@@ -1852,10 +1940,9 @@ fun VideoPlayerScreen(
                     )
                 }
 
-                // Precision Speed Slider with - / + Fine Step Buttons
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     FilledTonalIconButton(
-                        onClick = { playbackSpeed = ((playbackSpeed - 0.05f) * 20).roundToInt() / 20f.coerceAtLeast(0.25f) },
+                        onClick = { playbackSpeed = (((playbackSpeed - 0.05f) * 20).roundToInt() / 20f).coerceAtLeast(0.25f) },
                         colors = IconButtonDefaults.filledTonalIconButtonColors(containerColor = MxCardDark, contentColor = Color.White)
                     ) {
                         Icon(Icons.Default.Remove, contentDescription = "Decrease speed")
@@ -1883,7 +1970,6 @@ fun VideoPlayerScreen(
                     }
                 }
 
-                // Preset Speed Chips
                 val speedPresets = listOf(0.5f, 0.75f, 1.0f, 1.25f, 1.5f, 2.0f, 2.5f, 3.0f)
                 LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     items(speedPresets) { spd ->
@@ -1911,7 +1997,7 @@ fun VideoPlayerScreen(
     }
 
     // =========================================================================
-    // 10. MX AUDIO TRACK, 200% SW VOLUME BOOST & EQUALIZER SHEET
+    // 10. MX 5-BAND GRAPHICAL EQUALIZER, BASS BOOST & 200% SW VOLUME BOOST SHEET
     // =========================================================================
     if (showAudioBoostSheet) {
         ModalBottomSheet(
@@ -1922,26 +2008,30 @@ fun VideoPlayerScreen(
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 20.dp, vertical = 12.dp)
-                    .padding(bottom = 20.dp),
-                verticalArrangement = Arrangement.spacedBy(14.dp)
+                    .verticalScroll(rememberScrollState())
+                    .padding(horizontal = 20.dp, vertical = 10.dp)
+                    .padding(bottom = 24.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text("Audio & 200% Volume Boost", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                    Column {
+                        Text("MX Audio DSP & 5-Band EQ", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                        Text("Hardware Equalizer + 200% SW Loudness Boost", style = MaterialTheme.typography.bodySmall, color = Color.White.copy(alpha = 0.65f))
+                    }
                     Surface(
                         shape = RoundedCornerShape(8.dp),
                         color = if (volumePercent > 100) MxAmber.copy(alpha = 0.2f) else MxBlue.copy(alpha = 0.2f),
                         border = BorderStroke(1.dp, if (volumePercent > 100) MxAmber else MxBlue)
                     ) {
                         Text(
-                            text = if (volumePercent > 100) "$volumePercent% SW BOOST" else "$volumePercent%",
+                            text = if (volumePercent > 100) "$volumePercent% SW BOOST" else "Vol $volumePercent%",
                             color = if (volumePercent > 100) MxAmber else MxCyan,
                             fontWeight = FontWeight.ExtraBold,
-                            fontSize = 13.sp,
+                            fontSize = 12.sp,
                             modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
                         )
                     }
@@ -1977,7 +2067,7 @@ fun VideoPlayerScreen(
                                 fontWeight = FontWeight.Bold,
                                 fontSize = 12.sp,
                                 textAlign = TextAlign.Center,
-                                modifier = Modifier.padding(vertical = 8.dp)
+                                modifier = Modifier.padding(vertical = 7.dp)
                             )
                         }
                     }
@@ -1985,7 +2075,122 @@ fun VideoPlayerScreen(
 
                 HorizontalDivider(color = Color.White.copy(alpha = 0.1f))
 
-                Text("Equalizer Profile", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                // 5-Band Graphical Equalizer Sliders
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text("5-Band Graphical Equalizer", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                    TextButton(
+                        onClick = {
+                            applyEqualizerPreset("Flat / Direct")
+                            triggerCenterBadge("EQ Reset to Flat")
+                        }
+                    ) {
+                        Text("Reset Flat", color = MxCyan, fontSize = 12.sp)
+                    }
+                }
+
+                Surface(
+                    shape = RoundedCornerShape(14.dp),
+                    color = MxCardDark,
+                    border = BorderStroke(1.dp, Color.White.copy(alpha = 0.08f)),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(
+                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
+                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        eqBandLabels.forEachIndexed { idx, freqLabel ->
+                            val gainDb = eqBandsDb[idx]
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = freqLabel,
+                                    color = MxCyan,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 12.sp,
+                                    fontFamily = FontFamily.Monospace,
+                                    modifier = Modifier.width(52.dp)
+                                )
+                                Slider(
+                                    value = gainDb,
+                                    onValueChange = { newVal ->
+                                        val updated = eqBandsDb.toMutableList()
+                                        updated[idx] = (newVal * 2).roundToInt() / 2f
+                                        eqBandsDb = updated
+                                        selectedEqualizerPreset = "Custom"
+                                    },
+                                    valueRange = -15f..15f,
+                                    colors = SliderDefaults.colors(
+                                        thumbColor = MxBlue,
+                                        activeTrackColor = MxBlue,
+                                        inactiveTrackColor = Color.White.copy(alpha = 0.2f)
+                                    ),
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .height(30.dp)
+                                )
+                                val sign = if (gainDb > 0) "+" else ""
+                                Text(
+                                    text = "${sign}${gainDb.roundToInt()}dB",
+                                    color = if (gainDb != 0f) Color.White else Color.White.copy(alpha = 0.55f),
+                                    fontWeight = FontWeight.SemiBold,
+                                    fontSize = 11.sp,
+                                    fontFamily = FontFamily.Monospace,
+                                    textAlign = TextAlign.End,
+                                    modifier = Modifier.width(46.dp)
+                                )
+                            }
+                        }
+                    }
+                }
+
+                // Bass Boost & 3D Surround Sliders
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Surface(
+                        shape = RoundedCornerShape(12.dp),
+                        color = MxCardDark,
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Column(modifier = Modifier.padding(12.dp)) {
+                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                Text("Bass Boost", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                                Text("$bassBoostPercent%", color = MxAmber, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                            }
+                            Slider(
+                                value = bassBoostPercent.toFloat(),
+                                onValueChange = { bassBoostPercent = it.roundToInt() },
+                                valueRange = 0f..100f,
+                                colors = SliderDefaults.colors(thumbColor = MxAmber, activeTrackColor = MxAmber)
+                            )
+                        }
+                    }
+
+                    Surface(
+                        shape = RoundedCornerShape(12.dp),
+                        color = MxCardDark,
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Column(modifier = Modifier.padding(12.dp)) {
+                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                Text("3D Surround", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                                Text("$surroundPercent%", color = MxCyan, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                            }
+                            Slider(
+                                value = surroundPercent.toFloat(),
+                                onValueChange = { surroundPercent = it.roundToInt() },
+                                valueRange = 0f..100f,
+                                colors = SliderDefaults.colors(thumbColor = MxCyan, activeTrackColor = MxCyan)
+                            )
+                        }
+                    }
+                }
+
+                Text("Studio Presets", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
                 val presets = listOf("MX Cinema Surround", "Dialogue Clear", "Bass Boost+", "Headphones 3D", "Night Late Compression", "Flat / Direct")
                 Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     presets.chunked(2).forEach { rowPresets ->
@@ -1999,7 +2204,7 @@ fun VideoPlayerScreen(
                                     modifier = Modifier
                                         .weight(1f)
                                         .clickable {
-                                            selectedEqualizerPreset = preset
+                                            applyEqualizerPreset(preset)
                                             triggerCenterBadge("EQ: $preset")
                                         }
                                 ) {
@@ -2051,7 +2256,6 @@ fun VideoPlayerScreen(
                     )
                 }
 
-                // Font Size Slider
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
                     Text("Text Scale (${subtitleFontSizeSp.roundToInt()}sp)", style = MaterialTheme.typography.bodyMedium)
                     Slider(
@@ -2063,7 +2267,6 @@ fun VideoPlayerScreen(
                     )
                 }
 
-                // Subtitle Color Selector
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
@@ -2083,7 +2286,6 @@ fun VideoPlayerScreen(
                     }
                 }
 
-                // Subtitle Timing Sync Offset (-0.5s / +0.5s)
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
@@ -2235,13 +2437,14 @@ fun VideoPlayerScreen(
 }
 
 // ============================================================================
-// CUSTOM MX PLAYER PRECISION SEEKBAR (Canvas + Floating Scrub Bubble + A-B Markers)
+// CUSTOM MX PLAYER PRECISION SEEKBAR (Canvas + Live Frame Thumbnail Bubble + A-B Markers)
 // ============================================================================
 @Composable
 private fun MxPrecisionSeekBar(
     progress: Float,
     durationMs: Int,
     isScrubbing: Boolean,
+    scrubPreviewBitmap: Bitmap?,
     loopAFraction: Float?,
     loopBFraction: Float?,
     onScrubChange: (Float) -> Unit,
@@ -2279,23 +2482,43 @@ private fun MxPrecisionSeekBar(
             },
         contentAlignment = Alignment.CenterStart
     ) {
-        // Floating Timestamp Preview Bubble while Scrubbing
+        // Floating Frame Thumbnail & Timestamp Preview Bubble while Scrubbing
         if (isScrubbing) {
-            val bubbleOffsetX = ((progress * widthPx).roundToInt() - 36).coerceIn(0, (widthPx - 72).coerceAtLeast(0))
+            val cardWidthPx = if (scrubPreviewBitmap != null) 280 else 110
+            val bubbleOffsetX = ((progress * widthPx).roundToInt() - cardWidthPx / 2).coerceIn(0, (widthPx - cardWidthPx).coerceAtLeast(0))
+            val verticalOffset = if (scrubPreviewBitmap != null) -230 else -68
+
             Surface(
-                shape = RoundedCornerShape(6.dp),
-                color = MxBlue,
-                modifier = Modifier
-                    .offset { IntOffset(bubbleOffsetX, -64) }
+                shape = RoundedCornerShape(10.dp),
+                color = Color.Black.copy(alpha = 0.90f),
+                border = BorderStroke(1.5.dp, MxBlue),
+                modifier = Modifier.offset { IntOffset(bubbleOffsetX, verticalOffset) }
             ) {
-                Text(
-                    text = formatTime((progress * durationMs).roundToInt()),
-                    color = Color.White,
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.ExtraBold,
-                    fontFamily = FontFamily.Monospace,
-                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
-                )
+                Column(
+                    modifier = Modifier.padding(6.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    if (scrubPreviewBitmap != null) {
+                        Image(
+                            bitmap = scrubPreviewBitmap.asImageBitmap(),
+                            contentDescription = "Frame Preview",
+                            modifier = Modifier
+                                .width(116.dp)
+                                .height(66.dp)
+                                .clip(RoundedCornerShape(6.dp)),
+                            contentScale = ContentScale.Crop
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                    }
+                    Text(
+                        text = formatTime((progress * durationMs).roundToInt()),
+                        color = Color.White,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.ExtraBold,
+                        fontFamily = FontFamily.Monospace,
+                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 1.dp)
+                    )
+                }
             }
         }
 
@@ -2305,7 +2528,6 @@ private fun MxPrecisionSeekBar(
             val centerY = size.height / 2f
             val corner = CornerRadius(trackH / 2f, trackH / 2f)
 
-            // 1. Background Unplayed Track
             drawRoundRect(
                 color = Color.White.copy(alpha = 0.26f),
                 topLeft = Offset(0f, centerY - trackH / 2f),
@@ -2313,7 +2535,6 @@ private fun MxPrecisionSeekBar(
                 cornerRadius = corner
             )
 
-            // 2. A-B Repeat Highlight Segment
             if (loopAFraction != null) {
                 val ax = loopAFraction * size.width
                 val bx = (loopBFraction ?: progress) * size.width
@@ -2327,7 +2548,6 @@ private fun MxPrecisionSeekBar(
                 )
             }
 
-            // 3. Active Played Track (MX Electric Blue)
             val activeW = (progress.coerceIn(0f, 1f) * size.width)
             drawRoundRect(
                 brush = Brush.horizontalGradient(listOf(MxBlueDark, MxBlue, MxCyan)),
@@ -2336,7 +2556,6 @@ private fun MxPrecisionSeekBar(
                 cornerRadius = corner
             )
 
-            // 4. A & B Loop Markers
             loopAFraction?.let { af ->
                 drawCircle(color = MxAmber, radius = thumbR * 0.85f, center = Offset(af * size.width, centerY))
             }
@@ -2344,7 +2563,6 @@ private fun MxPrecisionSeekBar(
                 drawCircle(color = MxAmber, radius = thumbR * 0.85f, center = Offset(bf * size.width, centerY))
             }
 
-            // 5. Outer Halo + Crisp Thumb Circle
             val thumbX = activeW.coerceIn(thumbR, (size.width - thumbR).coerceAtLeast(thumbR))
             if (isScrubbing) {
                 drawCircle(
@@ -2367,9 +2585,6 @@ private fun MxPrecisionSeekBar(
     }
 }
 
-// ============================================================================
-// MX PLAYER SIGNATURE VERTICAL PROGRESS BAR HUD (Brightness & Volume/Boost)
-// ============================================================================
 @Composable
 private fun MxVerticalBarHud(
     icon: ImageVector,
@@ -2394,7 +2609,6 @@ private fun MxVerticalBarHud(
             Icon(imageVector = icon, contentDescription = null, tint = accentColor, modifier = Modifier.size(24.dp))
             Spacer(modifier = Modifier.height(10.dp))
 
-            // Vertical Bar Container
             Box(
                 modifier = Modifier
                     .width(8.dp)
@@ -2536,7 +2750,6 @@ private fun PowerfulCard(
 }
 
 private fun captureVideoScreenshot(
-    context: Context,
     file: File?,
     currentPosMs: Int,
     scope: kotlinx.coroutines.CoroutineScope,

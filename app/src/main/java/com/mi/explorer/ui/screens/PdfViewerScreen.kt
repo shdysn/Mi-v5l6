@@ -3,17 +3,22 @@ package com.mi.explorer.ui.screens
 import android.graphics.Bitmap
 import android.graphics.Color as AndroidColor
 import android.graphics.pdf.PdfRenderer
+import android.os.Environment
 import android.os.ParcelFileDescriptor
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.rememberTransformableState
 import androidx.compose.foundation.gestures.transformable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.*
@@ -24,16 +29,20 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ColorFilter
+import androidx.compose.ui.graphics.ColorMatrix
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.mi.explorer.data.model.FileItem
 import com.mi.explorer.ui.theme.MiOrange
 import com.mi.explorer.ui.viewmodel.ExplorerViewModel
 import com.mi.explorer.utils.FileOpener
@@ -41,6 +50,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
+import java.io.FileOutputStream
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -59,7 +69,29 @@ fun PdfViewerScreen(
     var errorMessage by remember { mutableStateOf<String?>(null) }
     val renderedPages = remember { mutableStateMapOf<Int, Bitmap>() }
 
+    // PDF Pro Toolkit States
+    var isNightInvertMode by remember { mutableStateOf(false) }
+    var showThumbnailBar by remember { mutableStateOf(true) }
+    var showJumpPageDialog by remember { mutableStateOf(false) }
+    var jumpPageInput by remember { mutableStateOf("") }
+
     val listState = rememberLazyListState()
+
+    // ColorMatrix for Night / Inverted Reading Mode
+    val invertColorFilter = remember(isNightInvertMode) {
+        if (isNightInvertMode) {
+            ColorFilter.colorMatrix(
+                ColorMatrix(
+                    floatArrayOf(
+                        -0.88f, 0f, 0f, 0f, 240f,
+                        0f, -0.88f, 0f, 0f, 240f,
+                        0f, 0f, -0.85f, 0f, 245f,
+                        0f, 0f, 0f, 1f, 0f
+                    )
+                )
+            )
+        } else null
+    }
 
     // Zoom & pan state
     var scale by remember { mutableFloatStateOf(1f) }
@@ -73,7 +105,6 @@ fun PdfViewerScreen(
         }
     }
 
-    // Monitor current visible item
     LaunchedEffect(listState.firstVisibleItemIndex) {
         currentPageIndex = listState.firstVisibleItemIndex
     }
@@ -100,13 +131,11 @@ fun PdfViewerScreen(
                     isLoading = false
                 }
 
-                // Render first batch of pages (up to 3) eagerly
                 val initialBatch = minOf(count, 4)
                 for (i in 0 until initialBatch) {
                     renderSinglePage(renderer, i, renderedPages)
                 }
 
-                // Render remaining pages gradually
                 for (i in initialBatch until count) {
                     renderSinglePage(renderer, i, renderedPages)
                 }
@@ -129,7 +158,7 @@ fun PdfViewerScreen(
                 title = {
                     Column {
                         Text(
-                            text = pdfState.title.ifEmpty { file?.name ?: "PDF Viewer" },
+                            text = pdfState.title.ifEmpty { file?.name ?: "PDF Studio" },
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.SemiBold,
                             maxLines = 1,
@@ -158,10 +187,47 @@ fun PdfViewerScreen(
                             Icon(Icons.Default.ZoomOutMap, contentDescription = "Reset Zoom")
                         }
                     }
+
+                    // Night Reading Mode Toggle
+                    IconButton(onClick = { isNightInvertMode = !isNightInvertMode }) {
+                        Icon(
+                            imageVector = Icons.Default.DarkMode,
+                            contentDescription = "Night Reading Mode",
+                            tint = if (isNightInvertMode) MiOrange else MaterialTheme.colorScheme.onSurface
+                        )
+                    }
+
+                    // Export Current Page as Image
+                    IconButton(
+                        onClick = {
+                            val pageBmp = renderedPages[currentPageIndex]
+                            if (pageBmp != null && file != null) {
+                                coroutineScope.launch {
+                                    val saved = exportPdfPageAsImage(pageBmp, file.nameWithoutExtension, currentPageIndex + 1)
+                                    if (saved != null) {
+                                        viewModel.showMessage("Exported Page ${currentPageIndex + 1} to Pictures/MiExplorer_PDF/${saved.name}")
+                                    } else {
+                                        viewModel.showMessage("Failed to export page")
+                                    }
+                                }
+                            }
+                        }
+                    ) {
+                        Icon(Icons.Default.Image, contentDescription = "Export Page as Image")
+                    }
+
+                    // Toggle Thumbnail Strip
+                    IconButton(onClick = { showThumbnailBar = !showThumbnailBar }) {
+                        Icon(
+                            imageVector = Icons.Default.ViewCarousel,
+                            contentDescription = "Page Thumbnails",
+                            tint = if (showThumbnailBar) MiOrange else MaterialTheme.colorScheme.onSurface
+                        )
+                    }
+
                     if (file != null) {
                         IconButton(onClick = {
-                            val dummyItem = com.mi.explorer.data.model.FileItem(file)
-                            FileOpener.shareFile(context, dummyItem)
+                            FileOpener.shareFile(context, FileItem(file))
                         }) {
                             Icon(Icons.Default.Share, contentDescription = "Share PDF")
                         }
@@ -171,13 +237,77 @@ fun PdfViewerScreen(
                     containerColor = MaterialTheme.colorScheme.surface
                 )
             )
+        },
+        bottomBar = {
+            AnimatedVisibility(visible = showThumbnailBar && pageCount > 1 && !isLoading) {
+                Surface(
+                    color = MaterialTheme.colorScheme.surface,
+                    tonalElevation = 4.dp,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .windowInsetsPadding(WindowInsets.navigationBars)
+                ) {
+                    LazyRow(
+                        contentPadding = PaddingValues(horizontal = 14.dp, vertical = 10.dp),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        items(pageCount) { idx ->
+                            val isSelected = idx == currentPageIndex
+                            val thumb = renderedPages[idx]
+                            Surface(
+                                shape = RoundedCornerShape(8.dp),
+                                border = BorderStroke(
+                                    width = if (isSelected) 2.dp else 1.dp,
+                                    color = if (isSelected) MiOrange else MaterialTheme.colorScheme.outline.copy(alpha = 0.4f)
+                                ),
+                                modifier = Modifier
+                                    .width(52.dp)
+                                    .height(70.dp)
+                                    .clickable {
+                                        coroutineScope.launch {
+                                            listState.animateScrollToItem(idx)
+                                        }
+                                    }
+                            ) {
+                                Box(contentAlignment = Alignment.Center) {
+                                    if (thumb != null) {
+                                        Image(
+                                            bitmap = thumb.asImageBitmap(),
+                                            contentDescription = "Thumb ${idx + 1}",
+                                            colorFilter = invertColorFilter,
+                                            modifier = Modifier.fillMaxSize(),
+                                            contentScale = ContentScale.Crop
+                                        )
+                                    }
+                                    Surface(
+                                        shape = RoundedCornerShape(4.dp),
+                                        color = if (isSelected) MiOrange else Color.Black.copy(alpha = 0.65f),
+                                        modifier = Modifier
+                                            .align(Alignment.BottomCenter)
+                                            .padding(bottom = 3.dp)
+                                    ) {
+                                        Text(
+                                            text = "${idx + 1}",
+                                            color = Color.White,
+                                            fontSize = 10.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp)
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
         }
     ) { innerPadding ->
         Box(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(innerPadding)
-                .background(Color(0xFFE5E7EB))
+                .background(if (isNightInvertMode) Color(0xFF0F172A) else Color(0xFFE5E7EB))
         ) {
             if (isLoading) {
                 Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -187,7 +317,7 @@ fun PdfViewerScreen(
                         Text(
                             text = "Loading PDF document...",
                             style = MaterialTheme.typography.bodyMedium,
-                            color = Color.DarkGray
+                            color = if (isNightInvertMode) Color.White else Color.DarkGray
                         )
                     }
                 }
@@ -246,12 +376,13 @@ fun PdfViewerScreen(
                                     .wrapContentHeight(),
                                 shape = RoundedCornerShape(8.dp),
                                 shadowElevation = 4.dp,
-                                color = Color.White
+                                color = if (isNightInvertMode) Color(0xFF1E293B) else Color.White
                             ) {
                                 if (bitmap != null) {
                                     Image(
                                         bitmap = bitmap.asImageBitmap(),
                                         contentDescription = "Page ${index + 1}",
+                                        colorFilter = invertColorFilter,
                                         modifier = Modifier.fillMaxWidth(),
                                         contentScale = ContentScale.FillWidth
                                     )
@@ -273,21 +404,27 @@ fun PdfViewerScreen(
                     }
                 }
 
-                // Floating Page Indicator Pill
+                // Floating Interactive Jump-to-Page Pill
                 if (pageCount > 1) {
                     Surface(
                         modifier = Modifier
                             .align(Alignment.BottomCenter)
-                            .padding(bottom = 20.dp)
-                            .clip(CircleShape),
-                        color = Color.Black.copy(alpha = 0.75f)
+                            .padding(bottom = 16.dp)
+                            .clip(CircleShape)
+                            .clickable {
+                                jumpPageInput = "${currentPageIndex + 1}"
+                                showJumpPageDialog = true
+                            },
+                        color = Color.Black.copy(alpha = 0.78f)
                     ) {
                         Row(
                             modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
+                            Icon(Icons.Default.FindInPage, contentDescription = null, tint = MiOrange, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
                             Text(
-                                text = "${currentPageIndex + 1} / $pageCount",
+                                text = "Page ${currentPageIndex + 1} / $pageCount • Tap to Jump",
                                 color = Color.White,
                                 style = MaterialTheme.typography.labelLarge,
                                 fontWeight = FontWeight.Bold
@@ -297,6 +434,62 @@ fun PdfViewerScreen(
                 }
             }
         }
+    }
+
+    if (showJumpPageDialog) {
+        AlertDialog(
+            onDismissRequest = { showJumpPageDialog = false },
+            title = { Text("Jump to Page (1 - $pageCount)") },
+            text = {
+                OutlinedTextField(
+                    value = jumpPageInput,
+                    onValueChange = { jumpPageInput = it.filter { ch -> ch.isDigit() } },
+                    label = { Text("Page Number") },
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    modifier = Modifier.fillMaxWidth()
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        val pageNum = jumpPageInput.toIntOrNull()
+                        if (pageNum != null && pageNum in 1..pageCount) {
+                            coroutineScope.launch {
+                                listState.scrollToItem(pageNum - 1)
+                            }
+                        }
+                        showJumpPageDialog = false
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = MiOrange)
+                ) {
+                    Text("Go")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showJumpPageDialog = false }) {
+                    Text("Cancel")
+                }
+            }
+        )
+    }
+}
+
+private suspend fun exportPdfPageAsImage(
+    pageBitmap: Bitmap,
+    pdfBaseName: String,
+    pageNumber: Int
+): File? = withContext(Dispatchers.IO) {
+    try {
+        val picturesDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES)
+        val outDir = File(picturesDir, "MiExplorer_PDF").apply { mkdirs() }
+        val outFile = File(outDir, "${pdfBaseName}_page_${pageNumber}.jpg")
+        FileOutputStream(outFile).use { fos ->
+            pageBitmap.compress(Bitmap.CompressFormat.JPEG, 95, fos)
+        }
+        outFile
+    } catch (_: Exception) {
+        null
     }
 }
 
@@ -308,7 +501,6 @@ private suspend fun renderSinglePage(
     try {
         synchronized(renderer) {
             val page = renderer.openPage(index)
-            // Scale appropriately for high DPI
             val scaleFactor = 1.8f
             val destWidth = (page.width * scaleFactor).toInt().coerceAtMost(1600)
             val destHeight = (page.height * scaleFactor).toInt().coerceAtMost(2400)
@@ -322,7 +514,5 @@ private suspend fun renderSinglePage(
 
             targetMap[index] = bitmap
         }
-    } catch (e: Exception) {
-        // Ignore individual page rendering error
-    }
+    } catch (_: Exception) {}
 }

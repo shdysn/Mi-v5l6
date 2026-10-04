@@ -120,6 +120,11 @@
                 <data android:host="*" />
                 <data android:pathPattern=".*\\.zip" />
                 <data android:pathPattern=".*\\.ZIP" />
+                <data android:pathPattern=".*\\.7z" />
+                <data android:pathPattern=".*\\.rar" />
+                <data android:pathPattern=".*\\.tar" />
+                <data android:pathPattern=".*\\.gz" />
+                <data android:pathPattern=".*\\.tgz" />
             </intent-filter>
 
             <!-- Intent Filter: Open with Text Files (.txt, .log, .json, .xml, .md, .csv) -->
@@ -182,6 +187,18 @@
                 <data android:pathPattern=".*\\.HTM" />
             </intent-filter>
         </activity>
+
+        <receiver
+            android:name="com.mi.explorer.widget.MiStorageWidgetProvider"
+            android:exported="true"
+            android:label="Mi Explorer Storage">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/mi_storage_widget_info" />
+        </receiver>
 
         <provider
             android:name="androidx.core.content.FileProvider"

@@ -48,9 +48,18 @@ fun MiToolsBottomSheet(
     onFtpClick: () -> Unit,
     onDualPaneToggle: () -> Unit,
     isDualPaneActive: Boolean = false,
-    onSocialClick: () -> Unit = {}
+    onSocialClick: () -> Unit = {},
+    onPinWidgetClick: () -> Unit = {}
 ) {
     val tools = listOf(
+        ToolItem(
+            id = "home_widget",
+            title = "Home Screen Widget",
+            subtitle = "Add live storage widget",
+            icon = Icons.Default.Widgets,
+            iconColor = Color(0xFF0EA5E9),
+            onClick = { onDismiss(); onPinWidgetClick() }
+        ),
         ToolItem(
             id = "app_installer",
             title = "App Installer",

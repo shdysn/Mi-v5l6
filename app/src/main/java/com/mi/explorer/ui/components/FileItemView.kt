@@ -245,6 +245,14 @@ fun FileActionDropdownMenu(
             }
         )
         DropdownMenuItem(
+            text = { Text("Pin to Home Screen") },
+            leadingIcon = { Icon(Icons.Default.PushPin, contentDescription = null, tint = Color(0xFF3B82F6)) },
+            onClick = {
+                onDismiss()
+                onMenuAction("pin_home")
+            }
+        )
+        DropdownMenuItem(
             text = { Text("Color Tags & Labels") },
             leadingIcon = { Icon(Icons.Default.Label, contentDescription = null, tint = MiOrange) },
             onClick = {

@@ -1,5 +1,6 @@
 package com.mi.explorer.ui.screens
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -17,27 +18,39 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.mi.explorer.data.model.FileItem
 import com.mi.explorer.data.repository.ZipEntryItem
 import com.mi.explorer.ui.theme.MiOrange
 import com.mi.explorer.ui.viewmodel.ExplorerViewModel
+import com.mi.explorer.utils.ArchiveHelper
+import com.mi.explorer.utils.ArchiveIntegrityResult
+import kotlinx.coroutines.launch
 import java.io.File
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ZipViewerScreen(viewModel: ExplorerViewModel) {
+    val scope = rememberCoroutineScope()
     val zipState by viewModel.zipViewerState.collectAsStateWithLifecycle()
     val isExtracting by viewModel.isZipExtracting.collectAsStateWithLifecycle()
 
     var searchQuery by remember { mutableStateOf("") }
     val selectedEntries = remember { mutableStateListOf<String>() }
     var showExtractDestinationDialog by remember { mutableStateOf(false) }
+    var isTestingIntegrity by remember { mutableStateOf(false) }
+    var integrityResult by remember { mutableStateOf<ArchiveIntegrityResult?>(null) }
 
     val archive = zipState.archiveInfo
+    val archiveType = remember(archive?.sourceFile) {
+        archive?.sourceFile?.let { ArchiveHelper.detectArchiveType(it) }
+    }
+    val isEncrypted = remember(archive?.sourceFile) {
+        archive?.sourceFile?.let { ArchiveHelper.isArchiveEncrypted(it) } ?: false
+    }
 
     val filteredEntries = remember(archive?.entries, searchQuery) {
         val list = archive?.entries ?: emptyList()
@@ -50,16 +63,34 @@ fun ZipViewerScreen(viewModel: ExplorerViewModel) {
             TopAppBar(
                 title = {
                     Column {
-                        Text(
-                            text = archive?.archiveName ?: "Zip Archive",
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            Text(
+                                text = archive?.archiveName ?: "Archive Studio",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.weight(1f, fill = false)
+                            )
+                            if (isEncrypted) {
+                                Surface(
+                                    color = Color(0xFFEF4444).copy(alpha = 0.16f),
+                                    shape = RoundedCornerShape(6.dp),
+                                    border = BorderStroke(1.dp, Color(0xFFEF4444))
+                                ) {
+                                    Text(
+                                        text = "AES-256",
+                                        color = Color(0xFFEF4444),
+                                        fontSize = 9.sp,
+                                        fontWeight = FontWeight.ExtraBold,
+                                        modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp)
+                                    )
+                                }
+                            }
+                        }
                         if (archive != null) {
                             Text(
-                                text = "${archive.totalEntries} items • ${archive.formattedArchiveSize}",
+                                text = "${archiveType?.label ?: "Archive"} • ${archive.totalEntries} items • ${archive.formattedArchiveSize}",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -72,7 +103,21 @@ fun ZipViewerScreen(viewModel: ExplorerViewModel) {
                     }
                 },
                 actions = {
-                    if (archive != null && !zipState.isLoading) {
+                    if (archive?.sourceFile != null && !zipState.isLoading) {
+                        IconButton(
+                            onClick = {
+                                scope.launch {
+                                    isTestingIntegrity = true
+                                    val res = ArchiveHelper.testArchiveIntegrity(archive.sourceFile)
+                                    isTestingIntegrity = false
+                                    res.onSuccess { integrityResult = it }
+                                    res.onFailure { viewModel.showMessage("Integrity test error: ${it.localizedMessage}") }
+                                }
+                            }
+                        ) {
+                            Icon(Icons.Default.VerifiedUser, contentDescription = "Test Archive Integrity", tint = Color(0xFF10B981))
+                        }
+
                         FilledTonalButton(
                             onClick = { showExtractDestinationDialog = true },
                             colors = ButtonDefaults.filledTonalButtonColors(
@@ -96,13 +141,17 @@ fun ZipViewerScreen(viewModel: ExplorerViewModel) {
                 .fillMaxSize()
                 .padding(innerPadding)
         ) {
-            if (zipState.isLoading || isExtracting) {
+            if (zipState.isLoading || isExtracting || isTestingIntegrity) {
                 Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
                         CircularProgressIndicator(color = MiOrange)
                         Spacer(modifier = Modifier.height(16.dp))
                         Text(
-                            text = if (isExtracting) "Extracting files..." else "Reading archive contents...",
+                            text = when {
+                                isTestingIntegrity -> "Verifying CRC32 & stream integrity..."
+                                isExtracting -> "Extracting files..."
+                                else -> "Reading archive contents..."
+                            },
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -124,7 +173,7 @@ fun ZipViewerScreen(viewModel: ExplorerViewModel) {
                         )
                         Spacer(modifier = Modifier.height(12.dp))
                         Text(
-                            text = "Failed to load Zip Archive",
+                            text = "Failed to load Archive",
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold
                         )
@@ -159,7 +208,7 @@ fun ZipViewerScreen(viewModel: ExplorerViewModel) {
                                 contentAlignment = Alignment.Center
                             ) {
                                 Icon(
-                                    imageVector = Icons.Default.FolderZip,
+                                    imageVector = if (isEncrypted) Icons.Default.EnhancedEncryption else Icons.Default.FolderZip,
                                     contentDescription = null,
                                     tint = MiOrange,
                                     modifier = Modifier.size(26.dp)
@@ -170,7 +219,7 @@ fun ZipViewerScreen(viewModel: ExplorerViewModel) {
 
                             Column(modifier = Modifier.weight(1f)) {
                                 Text(
-                                    text = "Archive Compression",
+                                    text = if (isEncrypted) "AES-256 Encrypted Archive" else "${archiveType?.label ?: "Archive"} Compression",
                                     style = MaterialTheme.typography.labelMedium,
                                     color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f)
                                 )
@@ -198,7 +247,7 @@ fun ZipViewerScreen(viewModel: ExplorerViewModel) {
                         }
                     }
 
-                    // Search inside zip
+                    // Search inside archive
                     OutlinedTextField(
                         value = searchQuery,
                         onValueChange = { searchQuery = it },
@@ -272,7 +321,10 @@ fun ZipViewerScreen(viewModel: ExplorerViewModel) {
         val defaultTarget = remember {
             val src = archive.sourceFile
             val parent = src.parentFile
-            val baseName = archive.archiveName.substringBeforeLast(".")
+            val baseName = archive.archiveName
+                .removeSuffix(".tar.gz")
+                .removeSuffix(".tgz")
+                .substringBeforeLast(".")
             if (parent != null && parent.canWrite()) {
                 File(parent, baseName)
             } else {
@@ -281,6 +333,7 @@ fun ZipViewerScreen(viewModel: ExplorerViewModel) {
         }
 
         var destinationPath by remember { mutableStateOf(defaultTarget.absolutePath) }
+        var extractPassword by remember { mutableStateOf("") }
 
         AlertDialog(
             onDismissRequest = { showExtractDestinationDialog = false },
@@ -292,12 +345,11 @@ fun ZipViewerScreen(viewModel: ExplorerViewModel) {
                 }
             },
             text = {
-                Column {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     Text(
                         text = if (selectedEntries.isNotEmpty()) "Extract ${selectedEntries.size} selected items to:" else "Extract all ${archive.totalEntries} items to:",
                         style = MaterialTheme.typography.bodyMedium
                     )
-                    Spacer(modifier = Modifier.height(10.dp))
                     OutlinedTextField(
                         value = destinationPath,
                         onValueChange = { destinationPath = it },
@@ -306,6 +358,17 @@ fun ZipViewerScreen(viewModel: ExplorerViewModel) {
                         maxLines = 3,
                         modifier = Modifier.fillMaxWidth()
                     )
+                    if (isEncrypted) {
+                        OutlinedTextField(
+                            value = extractPassword,
+                            onValueChange = { extractPassword = it },
+                            label = { Text("Archive Password (Required)") },
+                            singleLine = true,
+                            visualTransformation = PasswordVisualTransformation(),
+                            leadingIcon = { Icon(Icons.Default.Lock, contentDescription = null, tint = MiOrange) },
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    }
                 }
             },
             confirmButton = {
@@ -313,9 +376,11 @@ fun ZipViewerScreen(viewModel: ExplorerViewModel) {
                     onClick = {
                         val targetDir = File(destinationPath)
                         val toExtract = if (selectedEntries.isNotEmpty()) selectedEntries.toSet() else null
-                        viewModel.extractZipArchive(archive.sourceFile, targetDir, toExtract)
+                        val pass = extractPassword.takeIf { it.isNotBlank() }
+                        viewModel.extractZipArchive(archive.sourceFile, targetDir, toExtract, pass)
                         showExtractDestinationDialog = false
                     },
+                    enabled = !isEncrypted || extractPassword.isNotBlank(),
                     colors = ButtonDefaults.buttonColors(containerColor = MiOrange)
                 ) {
                     Text("Extract Now")
@@ -324,6 +389,42 @@ fun ZipViewerScreen(viewModel: ExplorerViewModel) {
             dismissButton = {
                 TextButton(onClick = { showExtractDestinationDialog = false }) {
                     Text("Cancel")
+                }
+            }
+        )
+    }
+
+    integrityResult?.let { res ->
+        AlertDialog(
+            onDismissRequest = { integrityResult = null },
+            icon = {
+                Icon(
+                    imageVector = if (res.isHealthy) Icons.Default.VerifiedUser else Icons.Default.Warning,
+                    contentDescription = null,
+                    tint = if (res.isHealthy) Color(0xFF10B981) else Color(0xFFEF4444),
+                    modifier = Modifier.size(44.dp)
+                )
+            },
+            title = {
+                Text(if (res.isHealthy) "Archive Integrity Verified" else "Integrity Issues Found")
+            },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text("Files Checked: ${res.totalChecked}")
+                    Text("Passed CRC/Stream Check: ${res.passedCount}")
+                    Text("Encryption: ${if (res.isEncrypted) "AES-256 Protected" else "Standard Unencrypted"}")
+                    if (res.failedEntries.isNotEmpty()) {
+                        Text(
+                            text = "Corrupted entries: ${res.failedEntries.take(5).joinToString(", ")}",
+                            color = Color(0xFFEF4444),
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { integrityResult = null }) {
+                    Text("OK")
                 }
             }
         )

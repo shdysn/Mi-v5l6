@@ -64,6 +64,38 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun handleIncomingIntent(intent: Intent) {
+        // 1. Check Home Screen Storage Widget Actions
+        val widgetTarget = intent.getStringExtra(com.mi.explorer.widget.MiStorageWidgetProvider.EXTRA_WIDGET_TARGET)
+        if (!widgetTarget.isNullOrBlank()) {
+            when (widgetTarget) {
+                com.mi.explorer.widget.MiStorageWidgetProvider.TARGET_CLEANER -> viewModel.openCleaner()
+                com.mi.explorer.widget.MiStorageWidgetProvider.TARGET_FAST_SHARE -> viewModel.openFastShare()
+                com.mi.explorer.widget.MiStorageWidgetProvider.TARGET_STORAGE -> {
+                    viewModel.selectTab(com.mi.explorer.ui.components.MiTab.STORAGE)
+                    viewModel.navigateToScreen(Screen.MAIN)
+                }
+            }
+            return
+        }
+
+        // 2. Check Home Screen Pinned Folder/File Shortcut
+        val shortcutPath = intent.getStringExtra(com.mi.explorer.utils.ShortcutHelper.EXTRA_SHORTCUT_PATH)
+        if (!shortcutPath.isNullOrBlank()) {
+            val targetFile = java.io.File(shortcutPath)
+            if (targetFile.exists()) {
+                if (targetFile.isDirectory) {
+                    viewModel.selectTab(com.mi.explorer.ui.components.MiTab.STORAGE)
+                    viewModel.navigateToScreen(Screen.MAIN)
+                    viewModel.loadDirectory(targetFile, addToHistory = true)
+                } else {
+                    viewModel.openFileSmart(FileItem(targetFile), listOf(FileItem(targetFile)))
+                }
+            } else {
+                viewModel.showMessage("Pinned item no longer exists")
+            }
+            return
+        }
+
         if (intent.action == Intent.ACTION_VIEW) {
             val uri = intent.data ?: return
             val mimeType = intent.type ?: contentResolver.getType(uri) ?: ""
@@ -128,9 +160,24 @@ class MainActivity : ComponentActivity() {
                         viewModel.showMessage("Failed to open PDF: ${e.localizedMessage}")
                     }
                 }
-                // ZIP Archives
-                lowerName.endsWith(".zip") || lowerMime.contains("zip") -> {
-                    viewModel.openZipFromUri(uri, displayName)
+                // Multi-Format Archives (ZIP, 7Z, RAR, TAR, GZ, TGZ)
+                lowerName.endsWith(".zip") || lowerName.endsWith(".7z") || lowerName.endsWith(".rar") ||
+                lowerName.endsWith(".tar") || lowerName.endsWith(".gz") || lowerName.endsWith(".tgz") ||
+                lowerMime.contains("zip") || lowerMime.contains("tar") || lowerMime.contains("rar") -> {
+                    try {
+                        val cacheFile = if (uri.scheme == "file" && uri.path != null && java.io.File(uri.path!!).exists()) {
+                            java.io.File(uri.path!!)
+                        } else {
+                            java.io.File(cacheDir, displayName).apply {
+                                contentResolver.openInputStream(uri)?.use { input ->
+                                    outputStream().use { output -> input.copyTo(output) }
+                                }
+                            }
+                        }
+                        viewModel.openZipViewer(cacheFile)
+                    } catch (_: Exception) {
+                        viewModel.openZipFromUri(uri, displayName)
+                    }
                 }
                 // HTML Files
                 lowerName.endsWith(".html") || lowerName.endsWith(".htm") || lowerMime.contains("html") -> {
@@ -270,6 +317,7 @@ fun MiMainApp(viewModel: ExplorerViewModel) {
     Scaffold(
         modifier = Modifier.fillMaxSize(),
         containerColor = if (isVideoScreen) androidx.compose.ui.graphics.Color.Black else androidx.compose.material3.MaterialTheme.colorScheme.background,
+        contentWindowInsets = if (isVideoScreen) androidx.compose.foundation.layout.WindowInsets(0, 0, 0, 0) else androidx.compose.material3.ScaffoldDefaults.contentWindowInsets,
         snackbarHost = { SnackbarHost(snackbarHostState) },
         bottomBar = {
             if (audioPlayerState.isVisible && !isVideoScreen) {
@@ -285,13 +333,9 @@ fun MiMainApp(viewModel: ExplorerViewModel) {
     ) { innerPadding ->
         Crossfade(
             targetState = currentScreen,
-            modifier = if (isVideoScreen) {
-                Modifier.fillMaxSize()
-            } else {
-                Modifier
-                    .fillMaxSize()
-                    .padding(innerPadding)
-            },
+            modifier = Modifier
+                .fillMaxSize()
+                .then(if (isVideoScreen) Modifier else Modifier.padding(innerPadding)),
             label = "MiScreenTransition"
         ) { screen ->
             when (screen) {
