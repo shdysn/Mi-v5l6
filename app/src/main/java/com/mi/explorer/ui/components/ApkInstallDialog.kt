@@ -4,16 +4,14 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
-import android.net.Uri
+import android.content.pm.PackageInfo
 import android.os.Build
-import android.provider.Settings
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -36,19 +34,45 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.core.graphics.drawable.toBitmap
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.mi.explorer.data.model.ApkFileItem
+import com.mi.explorer.ui.theme.MiBlue
 import com.mi.explorer.ui.theme.MiGreen
 import com.mi.explorer.ui.theme.MiOrange
 import com.mi.explorer.utils.FileOpener
 import com.mi.explorer.utils.InAppPackageInstallerHelper
-import kotlinx.coroutines.delay
+import com.mi.explorer.utils.InstallSessionEvent
+import com.mi.explorer.utils.InstallerStatusBus
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 
 enum class InAppInstallProgress {
     IDLE,
     STAGING,
     PROMPTING,
-    COMPLETED
+    COMPLETED,
+    FAILED
+}
+
+private fun queryInstalledPackage(context: Context, packageName: String): PackageInfo? {
+    if (packageName.isBlank() || packageName == "Unknown") return null
+    return try {
+        context.packageManager.getPackageInfo(packageName, 0)
+    } catch (_: Exception) {
+        null
+    }
+}
+
+private fun getPkgVersionCode(pkg: PackageInfo?): Long {
+    if (pkg == null) return 0L
+    return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+        pkg.longVersionCode
+    } else {
+        @Suppress("DEPRECATION")
+        pkg.versionCode.toLong()
+    }
 }
 
 @Composable
@@ -58,32 +82,130 @@ fun ApkInstallDialog(
     onInstall: () -> Unit,
     onShare: () -> Unit = {},
     onFastShare: () -> Unit = {},
-    onChecksum: () -> Unit = {}
+    onChecksum: () -> Unit = {},
+    autoStartInstall: Boolean = false
 ) {
     val context = LocalContext.current
+    val lifecycleOwner = LocalLifecycleOwner.current
     val scope = rememberCoroutineScope()
-    var installProgress by remember { mutableStateOf(InAppInstallProgress.IDLE) }
-    var stagingProgress by remember { mutableStateOf(0f) }
-    var stagingMessage by remember { mutableStateOf("") }
+
+    var installProgress by remember(apk.path) { mutableStateOf(InAppInstallProgress.IDLE) }
+    var stagingProgress by remember(apk.path) { mutableFloatStateOf(0f) }
+    var stagingMessage by remember(apk.path) { mutableStateOf("") }
+    var errorMessage by remember(apk.path) { mutableStateOf<String?>(null) }
+    var pendingConfirmIntent by remember(apk.path) { mutableStateOf<Intent?>(null) }
     var showPermissionsList by remember { mutableStateOf(false) }
 
-    // Check if install unknown apps permission is granted
     var canInstallUnknown by remember {
-        mutableStateOf(
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                context.packageManager.canRequestPackageInstalls()
-            } else true
-        )
+        mutableStateOf(FileOpener.canInstallUnknownApps(context))
     }
 
-    // Check if app is installed on device
-    val isAppInstalledOnDevice by remember(apk.packageName) {
-        derivedStateOf {
-            try {
-                context.packageManager.getPackageInfo(apk.packageName, 0) != null
-            } catch (e: Exception) {
-                false
+    var installedPkgInfo by remember(apk.packageName) {
+        mutableStateOf(queryInstalledPackage(context, apk.packageName))
+    }
+
+    val isAppInstalledOnDevice = installedPkgInfo != null
+    val liveInstalledVersionCode = getPkgVersionCode(installedPkgInfo)
+    val liveInstalledVersionName = installedPkgInfo?.versionName ?: apk.installedVersionName
+    val isLiveDowngrade = isAppInstalledOnDevice && apk.versionCode > 0 && liveInstalledVersionCode > apk.versionCode
+    val isLiveCurrentVersion = isAppInstalledOnDevice && apk.versionCode > 0 && liveInstalledVersionCode == apk.versionCode
+    val isSplitBundle = remember(apk.file.name) {
+        val ext = apk.file.extension.lowercase()
+        ext == "xapk" || ext == "apks"
+    }
+
+    fun startInstallation() {
+        if (!FileOpener.canInstallUnknownApps(context)) {
+            canInstallUnknown = false
+            errorMessage = "Please allow 'Install unknown apps' permission in Settings first, then tap Install."
+            FileOpener.requestInstallUnknownAppsPermission(context)
+            return
+        }
+        errorMessage = null
+        installProgress = InAppInstallProgress.STAGING
+        stagingProgress = 0.05f
+        stagingMessage = "Preparing package installation..."
+
+        scope.launch {
+            val res = InAppPackageInstallerHelper.installApkSession(
+                context = context,
+                apkFile = apk.file,
+                packageName = apk.packageName
+            ) { progress, message ->
+                stagingProgress = progress
+                stagingMessage = message
             }
+            res.fold(
+                onSuccess = {
+                    if (installProgress == InAppInstallProgress.STAGING) {
+                        installProgress = InAppInstallProgress.PROMPTING
+                        stagingMessage = "System installer opened — confirm on screen to finish."
+                    }
+                },
+                onFailure = { err ->
+                    installProgress = InAppInstallProgress.FAILED
+                    errorMessage = err.localizedMessage ?: "Failed to stage APK package"
+                }
+            )
+        }
+    }
+
+    // Listen to PackageInstallerStatusReceiver callbacks
+    LaunchedEffect(apk.path) {
+        InstallerStatusBus.events.collectLatest { event ->
+            when (event) {
+                is InstallSessionEvent.PendingUserAction -> {
+                    pendingConfirmIntent = event.confirmIntent
+                    installProgress = InAppInstallProgress.PROMPTING
+                    stagingMessage = "Confirm installation in the Android dialog..."
+                }
+                is InstallSessionEvent.Success -> {
+                    installedPkgInfo = queryInstalledPackage(context, apk.packageName)
+                    installProgress = InAppInstallProgress.COMPLETED
+                    stagingMessage = "Application installed successfully!"
+                    errorMessage = null
+                }
+                is InstallSessionEvent.Cancelled -> {
+                    installProgress = InAppInstallProgress.IDLE
+                    errorMessage = "Installation cancelled by user."
+                }
+                is InstallSessionEvent.Failed -> {
+                    installProgress = InAppInstallProgress.FAILED
+                    errorMessage = event.reason
+                }
+            }
+        }
+    }
+
+    // Refresh permission and installed status whenever returning from System Settings or System Installer
+    DisposableEffect(lifecycleOwner, apk.packageName) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                val nowCanInstall = FileOpener.canInstallUnknownApps(context)
+                canInstallUnknown = nowCanInstall
+                val updatedPkg = queryInstalledPackage(context, apk.packageName)
+                val updatedVerCode = getPkgVersionCode(updatedPkg)
+                installedPkgInfo = updatedPkg
+
+                if (installProgress == InAppInstallProgress.PROMPTING && updatedPkg != null) {
+                    if (apk.versionCode <= 0L || updatedVerCode == apk.versionCode) {
+                        installProgress = InAppInstallProgress.COMPLETED
+                        stagingMessage = "Application installed successfully!"
+                        errorMessage = null
+                    }
+                }
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+        }
+    }
+
+    // Auto-start installation if requested by 1-tap Install button
+    LaunchedEffect(apk.path, autoStartInstall) {
+        if (autoStartInstall && canInstallUnknown && !isLiveDowngrade) {
+            startInstallation()
         }
     }
 
@@ -99,7 +221,7 @@ fun ApkInstallDialog(
             tonalElevation = 6.dp,
             modifier = Modifier
                 .fillMaxWidth(0.92f)
-                .heightIn(max = 680.dp)
+                .heightIn(max = 700.dp)
                 .testTag("in_app_package_installer_dialog")
         ) {
             Column(
@@ -125,7 +247,12 @@ fun ApkInstallDialog(
                         ) {
                             Icon(Icons.Default.VerifiedUser, contentDescription = null, tint = Color(0xFF059669), modifier = Modifier.size(14.dp))
                             Spacer(modifier = Modifier.width(4.dp))
-                            Text("Mi Package Installer", style = MaterialTheme.typography.labelSmall, color = Color(0xFF059669), fontWeight = FontWeight.Bold)
+                            Text(
+                                text = if (isSplitBundle) "Mi Split APK Installer" else "Mi Package Installer",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = Color(0xFF059669),
+                                fontWeight = FontWeight.Bold
+                            )
                         }
                     }
 
@@ -162,7 +289,7 @@ fun ApkInstallDialog(
                         )
                     } else {
                         Icon(
-                            imageVector = Icons.Default.Android,
+                            imageVector = if (isSplitBundle) Icons.Default.Layers else Icons.Default.Android,
                             contentDescription = null,
                             tint = MiGreen,
                             modifier = Modifier.size(46.dp)
@@ -212,7 +339,7 @@ fun ApkInstallDialog(
 
                 // Installation Status Banner
                 when {
-                    apk.isDowngradeCandidate -> {
+                    isLiveDowngrade -> {
                         Surface(
                             shape = RoundedCornerShape(12.dp),
                             color = MiOrange.copy(alpha = 0.15f),
@@ -223,7 +350,7 @@ fun ApkInstallDialog(
                                     Icon(Icons.Default.Warning, contentDescription = null, tint = MiOrange, modifier = Modifier.size(18.dp))
                                     Spacer(modifier = Modifier.width(8.dp))
                                     Text(
-                                        text = "Version Downgrade (v${apk.installedVersionName} ➔ v${apk.versionName})",
+                                        text = "Version Downgrade (v${liveInstalledVersionName ?: "Current"} ➔ v${apk.versionName})",
                                         style = MaterialTheme.typography.titleSmall,
                                         fontWeight = FontWeight.Bold,
                                         color = MiOrange
@@ -238,10 +365,7 @@ fun ApkInstallDialog(
                                 Spacer(modifier = Modifier.height(8.dp))
                                 OutlinedButton(
                                     onClick = {
-                                        val intent = Intent(Intent.ACTION_UNINSTALL_PACKAGE).apply {
-                                            data = Uri.parse("package:${apk.packageName}")
-                                        }
-                                        context.startActivity(intent)
+                                        FileOpener.uninstallApp(context, apk.packageName)
                                     },
                                     shape = RoundedCornerShape(8.dp),
                                     colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFFEF4444)),
@@ -254,7 +378,7 @@ fun ApkInstallDialog(
                             }
                         }
                     }
-                    apk.isInstalled -> {
+                    isAppInstalledOnDevice -> {
                         Surface(
                             shape = RoundedCornerShape(12.dp),
                             color = MiGreen.copy(alpha = 0.12f),
@@ -268,7 +392,7 @@ fun ApkInstallDialog(
                                 Spacer(modifier = Modifier.width(10.dp))
                                 Column {
                                     Text(
-                                        text = if (apk.isCurrentVersion) "Already Installed (Reinstall)" else "App Update (v${apk.installedVersionName} ➔ v${apk.versionName})",
+                                        text = if (isLiveCurrentVersion) "Already Installed (Reinstall)" else "App Update (v${liveInstalledVersionName ?: "1.0"} ➔ v${apk.versionName})",
                                         style = MaterialTheme.typography.titleSmall,
                                         fontWeight = FontWeight.Bold,
                                         color = Color(0xFF059669)
@@ -339,10 +463,7 @@ fun ApkInstallDialog(
                             Spacer(modifier = Modifier.height(8.dp))
                             Button(
                                 onClick = {
-                                    val intent = Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES).apply {
-                                        data = Uri.parse("package:${context.packageName}")
-                                    }
-                                    context.startActivity(intent)
+                                    FileOpener.requestInstallUnknownAppsPermission(context)
                                 },
                                 shape = RoundedCornerShape(8.dp),
                                 colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFEF4444)),
@@ -424,7 +545,6 @@ fun ApkInstallDialog(
                             )
                         }
 
-                        // Sensitive permissions preview chips
                         if (apk.dangerousPermissions.isNotEmpty()) {
                             Spacer(modifier = Modifier.height(8.dp))
                             Row(
@@ -474,86 +594,206 @@ fun ApkInstallDialog(
                     }
                 }
 
-                Spacer(modifier = Modifier.height(16.dp))
+                Spacer(modifier = Modifier.height(14.dp))
 
-                // Installation Progress View
-                if (installProgress == InAppInstallProgress.STAGING) {
-                    Column(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalAlignment = Alignment.CenterHorizontally
-                    ) {
-                        LinearProgressIndicator(
-                            progress = { stagingProgress },
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(6.dp)
-                                .clip(RoundedCornerShape(3.dp)),
-                            color = MiGreen
-                        )
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Text(
-                            text = stagingMessage.ifEmpty { "Staging package in session..." },
-                            style = MaterialTheme.typography.bodySmall,
-                            fontWeight = FontWeight.Medium,
-                            color = MiGreen
-                        )
+                // Installation Progress / Prompting / Error / Success View
+                when (installProgress) {
+                    InAppInstallProgress.STAGING -> {
+                        Column(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            LinearProgressIndicator(
+                                progress = { stagingProgress },
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(6.dp)
+                                    .clip(RoundedCornerShape(3.dp)),
+                                color = MiGreen
+                            )
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Text(
+                                text = stagingMessage.ifEmpty { "Staging package in session..." },
+                                style = MaterialTheme.typography.bodySmall,
+                                fontWeight = FontWeight.Medium,
+                                color = MiGreen
+                            )
+                        }
+                        Spacer(modifier = Modifier.height(12.dp))
                     }
-                    Spacer(modifier = Modifier.height(12.dp))
+                    InAppInstallProgress.PROMPTING -> {
+                        Surface(
+                            shape = RoundedCornerShape(12.dp),
+                            color = MiBlue.copy(alpha = 0.12f),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Column(
+                                modifier = Modifier.padding(12.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    CircularProgressIndicator(
+                                        modifier = Modifier.size(16.dp),
+                                        strokeWidth = 2.dp,
+                                        color = MiBlue
+                                    )
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text(
+                                        text = stagingMessage.ifEmpty { "Waiting for confirmation in system dialog..." },
+                                        style = MaterialTheme.typography.bodySmall,
+                                        fontWeight = FontWeight.SemiBold,
+                                        color = MiBlue
+                                    )
+                                }
+                                if (!isSplitBundle) {
+                                    Spacer(modifier = Modifier.height(8.dp))
+                                    TextButton(
+                                        onClick = {
+                                            val confirm = pendingConfirmIntent
+                                            if (confirm != null) {
+                                                InstallerStatusBus.launchConfirmationIntent(context, confirm)
+                                            } else {
+                                                FileOpener.installApk(context, apk.file)
+                                            }
+                                        },
+                                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
+                                    ) {
+                                        Icon(Icons.Default.OpenInNew, contentDescription = null, modifier = Modifier.size(14.dp))
+                                        Spacer(modifier = Modifier.width(4.dp))
+                                        Text("Didn't see prompt? Open System Installer", style = MaterialTheme.typography.labelSmall)
+                                    }
+                                }
+                            }
+                        }
+                        Spacer(modifier = Modifier.height(12.dp))
+                    }
+                    InAppInstallProgress.COMPLETED -> {
+                        Surface(
+                            shape = RoundedCornerShape(12.dp),
+                            color = MiGreen.copy(alpha = 0.15f),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(12.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(Icons.Default.CheckCircle, contentDescription = null, tint = Color(0xFF059669), modifier = Modifier.size(20.dp))
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(
+                                    text = "Package installed successfully!",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color(0xFF059669)
+                                )
+                            }
+                        }
+                        Spacer(modifier = Modifier.height(12.dp))
+                    }
+                    InAppInstallProgress.FAILED -> {
+                        Surface(
+                            shape = RoundedCornerShape(12.dp),
+                            color = Color(0xFFEF4444).copy(alpha = 0.12f),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Column(modifier = Modifier.padding(12.dp)) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(Icons.Default.ErrorOutline, contentDescription = null, tint = Color(0xFFEF4444), modifier = Modifier.size(18.dp))
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text(
+                                        text = "Installation Could Not Complete",
+                                        style = MaterialTheme.typography.titleSmall,
+                                        fontWeight = FontWeight.Bold,
+                                        color = Color(0xFFEF4444)
+                                    )
+                                }
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Text(
+                                    text = errorMessage ?: "Unknown installation error",
+                                    style = MaterialTheme.typography.bodySmall
+                                )
+                                if (!isSplitBundle) {
+                                    Spacer(modifier = Modifier.height(8.dp))
+                                    OutlinedButton(
+                                        onClick = {
+                                            onInstall()
+                                        },
+                                        shape = RoundedCornerShape(8.dp),
+                                        modifier = Modifier.fillMaxWidth()
+                                    ) {
+                                        Icon(Icons.Default.SystemUpdateAlt, contentDescription = null, modifier = Modifier.size(16.dp))
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Text("Install with Standard System Installer", style = MaterialTheme.typography.labelSmall)
+                                    }
+                                }
+                            }
+                        }
+                        Spacer(modifier = Modifier.height(12.dp))
+                    }
+                    InAppInstallProgress.IDLE -> {
+                        if (errorMessage != null) {
+                            Text(
+                                text = errorMessage!!,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MiOrange,
+                                modifier = Modifier.padding(bottom = 8.dp)
+                            )
+                        }
+                    }
                 }
 
                 // Main Install Button
                 Button(
-                    onClick = {
-                        installProgress = InAppInstallProgress.STAGING
-                        scope.launch {
-                            val res = InAppPackageInstallerHelper.installApkSession(
-                                context = context,
-                                apkFile = apk.file,
-                                packageName = apk.packageName
-                            ) { progress, message ->
-                                stagingProgress = progress
-                                stagingMessage = message
-                            }
-                            res.fold(
-                                onSuccess = {
-                                    installProgress = InAppInstallProgress.COMPLETED
-                                },
-                                onFailure = {
-                                    val fallback = FileOpener.installApk(context, apk.file)
-                                    installProgress = if (fallback) InAppInstallProgress.COMPLETED else InAppInstallProgress.IDLE
-                                }
-                            )
-                        }
-                    },
+                    onClick = { startInstallation() },
+                    enabled = installProgress != InAppInstallProgress.STAGING,
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(50.dp)
                         .testTag("in_app_install_button"),
                     shape = RoundedCornerShape(14.dp),
                     colors = ButtonDefaults.buttonColors(
-                        containerColor = if (apk.isDowngradeCandidate) MiOrange else MiGreen,
+                        containerColor = if (isLiveDowngrade) MiOrange else MiGreen,
                         contentColor = Color.White
                     )
                 ) {
                     Icon(
-                        imageVector = if (apk.isInstalled) Icons.Default.Update else Icons.Default.Download,
+                        imageVector = if (isAppInstalledOnDevice) Icons.Default.Update else Icons.Default.Download,
                         contentDescription = null,
                         modifier = Modifier.size(20.dp)
                     )
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
                         text = when {
-                            apk.isDowngradeCandidate -> "Downgrade App"
-                            apk.isInstalled -> "Update App"
+                            installProgress == InAppInstallProgress.STAGING -> "Staging Package..."
+                            isLiveDowngrade -> "Downgrade App"
+                            isLiveCurrentVersion -> "Reinstall App"
+                            isAppInstalledOnDevice -> "Update App"
+                            isSplitBundle -> "Install Split Bundle"
                             else -> "Install Application"
                         },
                         style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold)
                     )
                 }
 
-                // If app is currently installed or after installing: Provide Open App Button
-                if (isAppInstalledOnDevice || installProgress == InAppInstallProgress.COMPLETED) {
-                    Spacer(modifier = Modifier.height(8.dp))
+                // Direct System Installer alternative button for standard .apk files
+                if (!isSplitBundle && installProgress == InAppInstallProgress.IDLE) {
+                    Spacer(modifier = Modifier.height(6.dp))
+                    TextButton(
+                        onClick = { onInstall() },
+                        modifier = Modifier.fillMaxWidth().height(36.dp)
+                    ) {
+                        Icon(Icons.Default.Android, contentDescription = null, modifier = Modifier.size(16.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = "Use Android System Installer Directly",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+
+                // If app is currently installed on device: Provide Open App Button
+                if (isAppInstalledOnDevice && apk.packageName != context.packageName) {
+                    Spacer(modifier = Modifier.height(6.dp))
                     OutlinedButton(
                         onClick = {
                             val intent = context.packageManager.getLaunchIntentForPackage(apk.packageName)

@@ -126,13 +126,20 @@ fun AppManagerScreen(
     ) { uri: Uri? ->
         if (uri != null) {
             val displayName = getFileNameFromUri(context, uri)
+            val safeName = displayName.replace(Regex("[^a-zA-Z0-9._-]"), "_")
             try {
-                val cacheFile = File(context.cacheDir, "installer_$displayName").apply {
-                    context.contentResolver.openInputStream(uri)?.use { input ->
-                        java.io.FileOutputStream(this).use { output -> input.copyTo(output) }
+                val cacheFile = if (uri.scheme == "file" && uri.path != null && File(uri.path!!).canRead()) {
+                    File(uri.path!!)
+                } else {
+                    File(context.cacheDir, "installer_${System.currentTimeMillis()}_$safeName").apply {
+                        context.contentResolver.openInputStream(uri)?.use { input ->
+                            java.io.FileOutputStream(this).use { output -> input.copyTo(output) }
+                        }
                     }
                 }
-                if (displayName.lowercase().endsWith(".xapk") || displayName.lowercase().endsWith(".apks")) {
+                if (!cacheFile.exists() || cacheFile.length() == 0L) {
+                    viewModel.showMessage("Selected file is empty or inaccessible")
+                } else if (displayName.lowercase().endsWith(".xapk") || displayName.lowercase().endsWith(".apks")) {
                     viewModel.openXapkFile(cacheFile)
                 } else {
                     viewModel.openApkInstallDialog(cacheFile)
@@ -772,10 +779,7 @@ fun AppManagerScreen(
                 Row {
                     TextButton(
                         onClick = {
-                            val intent = Intent(Intent.ACTION_UNINSTALL_PACKAGE).apply {
-                                data = Uri.parse("package:${backup.packageName}")
-                            }
-                            context.startActivity(intent)
+                            FileOpener.uninstallApp(context, backup.packageName)
                         }
                     ) {
                         Text("Uninstall Current First", color = Color(0xFFEF4444))
@@ -845,10 +849,7 @@ fun AppManagerScreen(
             },
             onUninstall = {
                 selectedApp = null
-                val intent = Intent(Intent.ACTION_UNINSTALL_PACKAGE).apply {
-                    data = Uri.parse("package:${app.packageName}")
-                }
-                context.startActivity(intent)
+                FileOpener.uninstallApp(context, app.packageName)
             },
             onSettings = {
                 selectedApp = null

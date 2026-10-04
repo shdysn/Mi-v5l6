@@ -1211,6 +1211,11 @@ class ExplorerViewModel(application: Application) : AndroidViewModel(application
     }
 
     fun openApkInstallDialog(file: File) {
+        val ext = file.extension.lowercase()
+        if (ext == "xapk" || ext == "apks") {
+            openXapkFile(file)
+            return
+        }
         viewModelScope.launch {
             val item = appsRepository.parseApkFile(file)
             _apkInstallTarget.value = item
@@ -2193,7 +2198,7 @@ class ExplorerViewModel(application: Application) : AndroidViewModel(application
     // ==========================================
     fun openXapkFile(file: File) {
         viewModelScope.launch {
-            val res = XapkInstaller.parseXapk(file)
+            val res = XapkInstaller.parseXapk(file, getApplication())
             res.fold(
                 onSuccess = { info ->
                     xapkInstallTarget.value = info

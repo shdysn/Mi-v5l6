@@ -1,11 +1,9 @@
 package com.mi.explorer.ui.screens
 
 import android.content.Context
-import android.content.Intent
 import android.net.Uri
 import android.os.Build
 import android.provider.OpenableColumns
-import android.provider.Settings
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -16,7 +14,6 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -36,6 +33,9 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.graphics.drawable.toBitmap
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.mi.explorer.data.model.ApkFileItem
 import com.mi.explorer.data.model.ApkTab
@@ -47,6 +47,12 @@ import com.mi.explorer.ui.theme.MiGreen
 import com.mi.explorer.ui.theme.MiOrange
 import com.mi.explorer.ui.viewmodel.ExplorerViewModel
 import com.mi.explorer.utils.FileOpener
+import com.mi.explorer.utils.InAppPackageInstallerHelper
+import com.mi.explorer.utils.InstallSessionEvent
+import com.mi.explorer.utils.InstallerStatusBus
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.launch
 import java.io.File
 import java.io.FileOutputStream
 
@@ -57,6 +63,9 @@ fun AppInstallerScreen(
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
+    val lifecycleOwner = LocalLifecycleOwner.current
+    val scope = rememberCoroutineScope()
+
     val storageApks by viewModel.storageApks.collectAsStateWithLifecycle()
     val isLoading by viewModel.isStorageApksLoading.collectAsStateWithLifecycle()
 
@@ -64,18 +73,42 @@ fun AppInstallerScreen(
     var filterType by remember { mutableStateOf("ALL") } // ALL, READY, UPDATES, INSTALLED, DOWNGRADE
     var selectedForBatch by remember { mutableStateOf(setOf<String>()) }
     var isBatchMode by remember { mutableStateOf(false) }
+    var isBatchInstalling by remember { mutableStateOf(false) }
+    var batchProgressText by remember { mutableStateOf("") }
 
     var checksumTarget by remember { mutableStateOf<FileItem?>(null) }
     var inspectingApk by remember { mutableStateOf<ApkFileItem?>(null) }
+    var autoStartDialogInstall by remember { mutableStateOf(false) }
     var apkToDelete by remember { mutableStateOf<ApkFileItem?>(null) }
 
-    // Check unknown app sources permission
+    // Check unknown app sources permission & dynamically refresh on ON_RESUME
     var canInstallUnknown by remember {
-        mutableStateOf(
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                context.packageManager.canRequestPackageInstalls()
-            } else true
-        )
+        mutableStateOf(FileOpener.canInstallUnknownApps(context))
+    }
+
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                canInstallUnknown = FileOpener.canInstallUnknownApps(context)
+                viewModel.loadStorageApks()
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+        }
+    }
+
+    LaunchedEffect(Unit) {
+        InstallerStatusBus.events.collectLatest { event ->
+            when (event) {
+                is InstallSessionEvent.Success -> {
+                    viewModel.loadStorageApks()
+                    viewModel.loadApps()
+                }
+                else -> {}
+            }
+        }
     }
 
     BackHandler {
@@ -95,10 +128,19 @@ fun AppInstallerScreen(
             for (uri in uris) {
                 try {
                     val displayName = getFileNameFromUri(context, uri)
-                    val cacheFile = File(context.cacheDir, "install_$displayName").apply {
-                        context.contentResolver.openInputStream(uri)?.use { input ->
-                            FileOutputStream(this).use { output -> input.copyTo(output) }
+                    val safeName = displayName.replace(Regex("[^a-zA-Z0-9._-]"), "_")
+                    val cacheFile = if (uri.scheme == "file" && uri.path != null && File(uri.path!!).canRead()) {
+                        File(uri.path!!)
+                    } else {
+                        File(context.cacheDir, "picked_${System.currentTimeMillis()}_$safeName").apply {
+                            context.contentResolver.openInputStream(uri)?.use { input ->
+                                FileOutputStream(this).use { output -> input.copyTo(output) }
+                            }
                         }
+                    }
+                    if (!cacheFile.exists() || cacheFile.length() == 0L) {
+                        viewModel.showMessage("Selected file is empty or inaccessible")
+                        continue
                     }
                     if (displayName.lowercase().endsWith(".xapk") || displayName.lowercase().endsWith(".apks")) {
                         viewModel.openXapkFile(cacheFile)
@@ -204,27 +246,62 @@ fun AppInstallerScreen(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
-                        Text(
-                            text = "${selectedForBatch.size} APKs selected",
-                            style = MaterialTheme.typography.titleSmall,
-                            fontWeight = FontWeight.Bold
-                        )
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "${selectedForBatch.size} APKs selected",
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.Bold
+                            )
+                            if (isBatchInstalling && batchProgressText.isNotEmpty()) {
+                                Text(
+                                    text = batchProgressText,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MiGreen,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
+                        }
                         Button(
+                            enabled = !isBatchInstalling,
                             onClick = {
-                                val targets = storageApks.filter { it.path in selectedForBatch }
-                                for (target in targets) {
-                                    FileOpener.installApk(context, target.file)
+                                if (!FileOpener.canInstallUnknownApps(context)) {
+                                    canInstallUnknown = false
+                                    viewModel.showMessage("Please allow 'Install unknown apps' permission first")
+                                    FileOpener.requestInstallUnknownAppsPermission(context)
+                                    return@Button
                                 }
-                                viewModel.showMessage("Invoked installer for ${targets.size} package(s)")
-                                isBatchMode = false
-                                selectedForBatch = emptySet()
+                                val targets = storageApks.filter { it.path in selectedForBatch }
+                                if (targets.isEmpty()) return@Button
+
+                                scope.launch {
+                                    isBatchInstalling = true
+                                    for ((idx, target) in targets.withIndex()) {
+                                        batchProgressText = "Staging (${idx + 1}/${targets.size}): ${target.appName}"
+                                        InAppPackageInstallerHelper.installApkSession(
+                                            context = context,
+                                            apkFile = target.file,
+                                            packageName = target.packageName
+                                        ) { _, step ->
+                                            batchProgressText = "(${idx + 1}/${targets.size}) ${target.appName}: $step"
+                                        }
+                                        if (idx < targets.lastIndex) {
+                                            delay(1500)
+                                        }
+                                    }
+                                    isBatchInstalling = false
+                                    batchProgressText = ""
+                                    isBatchMode = false
+                                    selectedForBatch = emptySet()
+                                    viewModel.showMessage("Queued ${targets.size} package(s) for installation")
+                                }
                             },
                             colors = ButtonDefaults.buttonColors(containerColor = MiGreen),
                             shape = RoundedCornerShape(12.dp)
                         ) {
                             Icon(Icons.Default.Download, contentDescription = null, modifier = Modifier.size(18.dp))
                             Spacer(modifier = Modifier.width(6.dp))
-                            Text("Install All Selected (${selectedForBatch.size})")
+                            Text(if (isBatchInstalling) "Staging..." else "Install Selected (${selectedForBatch.size})")
                         }
                     }
                 }
@@ -329,10 +406,7 @@ fun AppInstallerScreen(
                             Spacer(modifier = Modifier.height(8.dp))
                             Button(
                                 onClick = {
-                                    val intent = Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES).apply {
-                                        data = Uri.parse("package:${context.packageName}")
-                                    }
-                                    context.startActivity(intent)
+                                    FileOpener.requestInstallUnknownAppsPermission(context)
                                 },
                                 shape = RoundedCornerShape(10.dp),
                                 colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFEF4444)),
@@ -484,9 +558,16 @@ fun AppInstallerScreen(
                             }
                         },
                         onInstall = {
-                            inspectingApk = apk
+                            val ext = apk.file.extension.lowercase()
+                            if (ext == "xapk" || ext == "apks") {
+                                viewModel.openXapkFile(apk.file)
+                            } else {
+                                autoStartDialogInstall = true
+                                inspectingApk = apk
+                            }
                         },
                         onInspect = {
+                            autoStartDialogInstall = false
                             inspectingApk = apk
                         },
                         onShare = {
@@ -504,13 +585,25 @@ fun AppInstallerScreen(
         }
     }
 
-    // Inspect / Full Permissions Dialog
+    // Inspect / Full Permissions & 1-Tap Installer Dialog
     inspectingApk?.let { apk ->
         ApkInstallDialog(
             apk = apk,
-            onDismiss = { inspectingApk = null },
+            autoStartInstall = autoStartDialogInstall,
+            onDismiss = {
+                inspectingApk = null
+                autoStartDialogInstall = false
+                viewModel.loadStorageApks()
+            },
             onInstall = {
-                FileOpener.installApk(context, apk.file)
+                val ext = apk.file.extension.lowercase()
+                if (ext == "xapk" || ext == "apks") {
+                    inspectingApk = null
+                    autoStartDialogInstall = false
+                    viewModel.openXapkFile(apk.file)
+                } else {
+                    FileOpener.installApk(context, apk.file)
+                }
             },
             onShare = {
                 FileOpener.shareFile(context, FileItem(apk.file))
@@ -570,6 +663,11 @@ private fun InstallerApkCard(
     onFastShare: () -> Unit,
     onDelete: () -> Unit
 ) {
+    val isBundle = remember(apk.file.name) {
+        val ext = apk.file.extension.lowercase()
+        ext == "xapk" || ext == "apks"
+    }
+
     Card(
         shape = RoundedCornerShape(18.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
@@ -611,7 +709,12 @@ private fun InstallerApkCard(
                             modifier = Modifier.size(44.dp).clip(RoundedCornerShape(12.dp))
                         )
                     } else {
-                        Icon(Icons.Default.Android, contentDescription = null, tint = MiGreen, modifier = Modifier.size(28.dp))
+                        Icon(
+                            imageVector = if (isBundle) Icons.Default.Layers else Icons.Default.Android,
+                            contentDescription = null,
+                            tint = MiGreen,
+                            modifier = Modifier.size(28.dp)
+                        )
                     }
                 }
 
@@ -639,6 +742,9 @@ private fun InstallerApkCard(
                             }
                             apk.isInstalled -> {
                                 StatusTag("INSTALLED", MaterialTheme.colorScheme.outline)
+                            }
+                            isBundle -> {
+                                StatusTag("SPLIT BUNDLE", MiOrange)
                             }
                             else -> {
                                 StatusTag("NEW APP", MiGreen)
@@ -684,7 +790,7 @@ private fun InstallerApkCard(
                         containerColor = when {
                             apk.isDowngradeCandidate -> MiOrange
                             apk.isUpgradeCandidate -> MiBlue
-                            apk.isInstalled -> Color(0xFF64748B)
+                            apk.isInstalled -> Color(0xFF059669)
                             else -> MiGreen
                         }
                     ),
@@ -702,6 +808,7 @@ private fun InstallerApkCard(
                             apk.isDowngradeCandidate -> "Downgrade"
                             apk.isUpgradeCandidate -> "Update"
                             apk.isInstalled -> "Reinstall"
+                            isBundle -> "Install Splits"
                             else -> "Install App"
                         },
                         style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold)

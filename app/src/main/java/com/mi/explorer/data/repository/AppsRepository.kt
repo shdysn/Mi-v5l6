@@ -134,20 +134,28 @@ class AppsRepository(private val context: Context) {
             val myAppSource = File(context.applicationInfo.sourceDir)
 
             if (myAppSource.exists()) {
-                val publicApk = File(publicDir, "MiExplorer_v1.0.apk")
-                if (!publicApk.exists()) {
-                    myAppSource.copyTo(publicApk, overwrite = true)
-                }
-                if (publicApk.exists() && seenPaths.add(publicApk.absolutePath)) {
-                    results.add(publicApk)
+                val publicApk = try {
+                    val target = File(publicDir, "MiExplorer_v1.0.apk")
+                    if (!target.exists() || target.length() == 0L) {
+                        myAppSource.copyTo(target, overwrite = true)
+                    }
+                    target.takeIf { it.exists() && it.length() > 0L }
+                } catch (_: Exception) {
+                    null
                 }
 
-                val internalApk = File(internalDir, "MiExplorer_v1.0.apk")
-                if (!internalApk.exists()) {
-                    myAppSource.copyTo(internalApk, overwrite = true)
-                }
-                if (internalApk.exists() && seenPaths.add(internalApk.absolutePath)) {
-                    results.add(internalApk)
+                if (publicApk != null) {
+                    if (seenPaths.add(publicApk.absolutePath)) {
+                        results.add(publicApk)
+                    }
+                } else {
+                    val internalApk = File(internalDir, "MiExplorer_v1.0.apk")
+                    if (!internalApk.exists() || internalApk.length() == 0L) {
+                        myAppSource.copyTo(internalApk, overwrite = true)
+                    }
+                    if (internalApk.exists() && seenPaths.add(internalApk.absolutePath)) {
+                        results.add(internalApk)
+                    }
                 }
             }
         } catch (e: Exception) {
@@ -174,6 +182,10 @@ class AppsRepository(private val context: Context) {
     }
 
     fun parseApkFile(file: File, isBackup: Boolean = false): ApkFileItem {
+        val ext = file.extension.lowercase()
+        if (ext == "xapk" || ext == "apks") {
+            return parseBundleApkFile(file, isBackup)
+        }
         return try {
             val flags = PackageManager.GET_PERMISSIONS or PackageManager.GET_META_DATA
             val pkgInfo = pm.getPackageArchiveInfo(file.absolutePath, flags)
@@ -196,7 +208,7 @@ class AppsRepository(private val context: Context) {
 
                 val targetPackage = pkgInfo.packageName ?: ""
                 val installedPkg = try {
-                    pm.getPackageInfo(targetPackage, 0)
+                    if (targetPackage.isNotBlank()) pm.getPackageInfo(targetPackage, 0) else null
                 } catch (e: Exception) {
                     null
                 }
@@ -294,6 +306,132 @@ class AppsRepository(private val context: Context) {
         }
     }
 
+    private fun parseBundleApkFile(file: File, isBackup: Boolean): ApkFileItem {
+        var packageName = ""
+        var appName = file.nameWithoutExtension
+        var versionName = "1.0"
+        var versionCode = 1L
+        var minSdk = 0
+        var targetSdk = 0
+        var permissions: List<String> = emptyList()
+        var icon: android.graphics.drawable.Drawable? = null
+        val abis = mutableSetOf<String>()
+
+        try {
+            java.util.zip.ZipFile(file).use { zf ->
+                val apkEntries = mutableListOf<String>()
+                val entries = zf.entries()
+                while (entries.hasMoreElements()) {
+                    val entry = entries.nextElement()
+                    if (entry.isDirectory) continue
+                    val lower = entry.name.lowercase()
+                    if (lower.endsWith(".apk")) {
+                        apkEntries.add(entry.name)
+                        if (lower.contains("arm64_v8a") || lower.contains("arm64-v8a")) abis.add("arm64-v8a")
+                        if (lower.contains("armeabi_v7a") || lower.contains("armeabi-v7a")) abis.add("armeabi-v7a")
+                        if (lower.contains("x86_64")) abis.add("x86_64")
+                    } else if (lower == "manifest.json" || lower.endsWith("/manifest.json")) {
+                        try {
+                            val jsonStr = zf.getInputStream(entry).bufferedReader().use { it.readText() }
+                            val obj = org.json.JSONObject(jsonStr)
+                            packageName = obj.optString("package_name", packageName)
+                            appName = obj.optString("name", appName)
+                            versionName = obj.optString("version_name", versionName)
+                            versionCode = obj.optLong("version_code", versionCode)
+                            minSdk = obj.optInt("min_sdk_version", minSdk)
+                            targetSdk = obj.optInt("target_sdk_version", targetSdk)
+                        } catch (_: Exception) {}
+                    }
+                }
+
+                val baseEntryName = apkEntries.firstOrNull {
+                    val simple = it.substringAfterLast('/').lowercase()
+                    simple == "base.apk" || simple == "base-master.apk" || !simple.startsWith("split_config")
+                } ?: apkEntries.firstOrNull()
+
+                if (baseEntryName != null) {
+                    val baseEntry = zf.getEntry(baseEntryName)
+                    if (baseEntry != null) {
+                        val tempApk = File(context.cacheDir, "bundle_meta_${System.nanoTime()}.apk")
+                        try {
+                            zf.getInputStream(baseEntry).use { input ->
+                                java.io.FileOutputStream(tempApk).use { output -> input.copyTo(output) }
+                            }
+                            val flags = PackageManager.GET_PERMISSIONS or PackageManager.GET_META_DATA
+                            val pkgInfo = pm.getPackageArchiveInfo(tempApk.absolutePath, flags)
+                            val appInfo = pkgInfo?.applicationInfo
+                            if (pkgInfo != null && appInfo != null) {
+                                appInfo.sourceDir = tempApk.absolutePath
+                                appInfo.publicSourceDir = tempApk.absolutePath
+                                if (packageName.isBlank() && !pkgInfo.packageName.isNullOrBlank()) {
+                                    packageName = pkgInfo.packageName
+                                }
+                                val label = try { pm.getApplicationLabel(appInfo).toString() } catch (_: Exception) { "" }
+                                if (label.isNotBlank() && (appName == file.nameWithoutExtension || appName.isBlank())) {
+                                    appName = label
+                                }
+                                if (!pkgInfo.versionName.isNullOrBlank()) {
+                                    versionName = pkgInfo.versionName ?: versionName
+                                }
+                                versionCode = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.P) {
+                                    pkgInfo.longVersionCode
+                                } else {
+                                    @Suppress("DEPRECATION")
+                                    pkgInfo.versionCode.toLong()
+                                }
+                                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.N) {
+                                    minSdk = appInfo.minSdkVersion
+                                }
+                                targetSdk = appInfo.targetSdkVersion
+                                permissions = pkgInfo.requestedPermissions?.toList() ?: emptyList()
+                                icon = try { pm.getApplicationIcon(appInfo) } catch (_: Exception) { null }
+                            }
+                        } catch (_: Exception) {
+                        } finally {
+                            try { tempApk.delete() } catch (_: Exception) {}
+                        }
+                    }
+                }
+            }
+        } catch (_: Exception) {}
+
+        val installedPkg = try {
+            if (packageName.isNotBlank()) pm.getPackageInfo(packageName, 0) else null
+        } catch (_: Exception) {
+            null
+        }
+        val isInstalled = installedPkg != null
+        val installedVersionCode = installedPkg?.let {
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.P) {
+                it.longVersionCode
+            } else {
+                @Suppress("DEPRECATION")
+                it.versionCode.toLong()
+            }
+        } ?: 0L
+
+        return ApkFileItem(
+            file = file,
+            name = file.name,
+            path = file.absolutePath,
+            size = file.length(),
+            appName = appName.ifBlank { file.nameWithoutExtension },
+            packageName = packageName.ifBlank { "Unknown" },
+            versionName = versionName,
+            versionCode = versionCode,
+            minSdk = minSdk,
+            targetSdk = targetSdk,
+            isInstalled = isInstalled,
+            installedVersionName = installedPkg?.versionName,
+            installedVersionCode = installedVersionCode,
+            isBackup = isBackup,
+            permissions = permissions,
+            supportedAbis = if (abis.isEmpty()) listOf("Split Bundle") else abis.toList(),
+            icon = icon,
+            lastModified = file.lastModified()
+        )
+    }
+
     suspend fun backupAppApk(app: AppInfoItem): Result<File> = withContext(Dispatchers.IO) {
         try {
             val pkg = pm.getPackageInfo(app.packageName, 0)
@@ -306,36 +444,43 @@ class AppsRepository(private val context: Context) {
             val backupDir = getBackupDirectory()
             val cleanAppName = app.appName.replace(Regex("[^a-zA-Z0-9._-]"), "_")
             val vCode = app.versionCode
-            val destFile = File(backupDir, "${cleanAppName}_v${app.versionName}_vc${vCode}.apk")
 
-            sourceApk.copyTo(destFile, overwrite = true)
-
-            // If app has split APKs, bundle them or save them as well
+            // If app has split APKs, bundle base + splits + manifest.json into a complete .apks archive
             val splits = appInfo.splitSourceDirs
             if (splits != null && splits.isNotEmpty()) {
-                try {
-                    val bundleFile = File(backupDir, "${cleanAppName}_v${app.versionName}_vc${vCode}.apks")
-                    java.util.zip.ZipOutputStream(java.io.FileOutputStream(bundleFile)).use { zos ->
-                        // Add base APK
-                        zos.putNextEntry(java.util.zip.ZipEntry("base.apk"))
-                        sourceApk.inputStream().use { it.copyTo(zos) }
-                        zos.closeEntry()
+                val bundleFile = File(backupDir, "${cleanAppName}_v${app.versionName}_vc${vCode}.apks")
+                java.util.zip.ZipOutputStream(java.io.FileOutputStream(bundleFile)).use { zos ->
+                    // Write manifest.json so XapkInstaller & parseBundleApkFile have instant metadata
+                    val manifestJson = org.json.JSONObject().apply {
+                        put("package_name", app.packageName)
+                        put("name", app.appName)
+                        put("version_name", app.versionName)
+                        put("version_code", vCode)
+                    }.toString()
+                    zos.putNextEntry(java.util.zip.ZipEntry("manifest.json"))
+                    zos.write(manifestJson.toByteArray(Charsets.UTF_8))
+                    zos.closeEntry()
 
-                        // Add split APKs
-                        for (splitPath in splits) {
-                            val splitFile = File(splitPath)
-                            if (splitFile.exists()) {
-                                zos.putNextEntry(java.util.zip.ZipEntry(splitFile.name))
-                                splitFile.inputStream().use { it.copyTo(zos) }
-                                zos.closeEntry()
-                            }
+                    // Add base APK
+                    zos.putNextEntry(java.util.zip.ZipEntry("base.apk"))
+                    sourceApk.inputStream().use { it.copyTo(zos) }
+                    zos.closeEntry()
+
+                    // Add split APKs
+                    for (splitPath in splits) {
+                        val splitFile = File(splitPath)
+                        if (splitFile.exists()) {
+                            zos.putNextEntry(java.util.zip.ZipEntry(splitFile.name))
+                            splitFile.inputStream().use { it.copyTo(zos) }
+                            zos.closeEntry()
                         }
                     }
-                } catch (e: Exception) {
-                    // Bundle zip failure is non-fatal since base apk is saved
                 }
+                return@withContext Result.success(bundleFile)
             }
 
+            val destFile = File(backupDir, "${cleanAppName}_v${app.versionName}_vc${vCode}.apk")
+            sourceApk.copyTo(destFile, overwrite = true)
             Result.success(destFile)
         } catch (e: Exception) {
             Result.failure(e)

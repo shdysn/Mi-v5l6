@@ -46,6 +46,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        com.mi.explorer.utils.InstallerStatusBus.attachActivity(this)
         enableEdgeToEdge()
         handleIncomingIntent(intent)
 
@@ -57,6 +58,16 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    override fun onResume() {
+        super.onResume()
+        com.mi.explorer.utils.InstallerStatusBus.attachActivity(this)
+    }
+
+    override fun onDestroy() {
+        com.mi.explorer.utils.InstallerStatusBus.detachActivity(this)
+        super.onDestroy()
+    }
+
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
@@ -64,6 +75,10 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun handleIncomingIntent(intent: Intent) {
+        if (intent.getBooleanExtra(FileOpener.EXTRA_FROM_INTERNAL_INSTALLER, false)) {
+            return
+        }
+
         // 0. Check In-App PackageInstaller Session Commit Callback (APK / Split XAPK / APKS)
         if (intent.action == "com.mi.explorer.ACTION_INSTALL_COMMIT") {
             val status = intent.getIntExtra(
@@ -80,7 +95,6 @@ class MainActivity : ComponentActivity() {
                         intent.getParcelableExtra(Intent.EXTRA_INTENT)
                     }
                     if (confirmIntent != null) {
-                        confirmIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                         try {
                             startActivity(confirmIntent)
                         } catch (e: Exception) {
@@ -92,12 +106,14 @@ class MainActivity : ComponentActivity() {
                     viewModel.showMessage("Package installed successfully!")
                     viewModel.loadApps()
                     viewModel.loadStorageApks()
+                    viewModel.loadAppBackups()
                 }
                 android.content.pm.PackageInstaller.STATUS_FAILURE_ABORTED -> {
                     viewModel.showMessage("Installation cancelled by user")
                 }
                 else -> {
-                    viewModel.showMessage("Installation failed: ${statusMessage ?: "Error code $status"}")
+                    val readable = com.mi.explorer.utils.InstallerStatusBus.formatFailureReason(status, statusMessage)
+                    viewModel.showMessage(readable)
                 }
             }
             return
@@ -172,12 +188,19 @@ class MainActivity : ComponentActivity() {
                 // APK, XAPK, APKS Installation Packages (In-App Installer)
                 lowerName.endsWith(".apk") || lowerName.endsWith(".xapk") || lowerName.endsWith(".apks") || lowerMime.contains("android.package-archive") -> {
                     try {
-                        val cacheFile = java.io.File(cacheDir, displayName).apply {
-                            contentResolver.openInputStream(uri)?.use { input ->
-                                outputStream().use { output -> input.copyTo(output) }
+                        val safeName = displayName.replace(Regex("[^a-zA-Z0-9._-]"), "_")
+                        val cacheFile = if (uri.scheme == "file" && uri.path != null && java.io.File(uri.path!!).canRead()) {
+                            java.io.File(uri.path!!)
+                        } else {
+                            java.io.File(cacheDir, "view_${System.currentTimeMillis()}_$safeName").apply {
+                                contentResolver.openInputStream(uri)?.use { input ->
+                                    outputStream().use { output -> input.copyTo(output) }
+                                }
                             }
                         }
-                        if (lowerName.endsWith(".xapk") || lowerName.endsWith(".apks")) {
+                        if (!cacheFile.exists() || cacheFile.length() == 0L) {
+                            viewModel.showMessage("Package file is empty or unreadable")
+                        } else if (lowerName.endsWith(".xapk") || lowerName.endsWith(".apks")) {
                             viewModel.openXapkFile(cacheFile)
                         } else {
                             viewModel.openApkInstallDialog(cacheFile)
@@ -337,6 +360,23 @@ fun MiMainApp(viewModel: ExplorerViewModel) {
         message?.let {
             snackbarHostState.showSnackbar(it)
             viewModel.clearMessage()
+        }
+    }
+
+    LaunchedEffect(Unit) {
+        com.mi.explorer.utils.InstallerStatusBus.events.collect { event ->
+            when (event) {
+                is com.mi.explorer.utils.InstallSessionEvent.Success -> {
+                    viewModel.loadApps()
+                    viewModel.loadStorageApks()
+                    viewModel.loadAppBackups()
+                    viewModel.showMessage("Package installed successfully!")
+                }
+                is com.mi.explorer.utils.InstallSessionEvent.Failed -> {
+                    viewModel.showMessage(event.reason)
+                }
+                else -> {}
+            }
         }
     }
 
