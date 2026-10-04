@@ -37,13 +37,61 @@ data class CleanScanResult(
 
 class FileRepository(private val context: Context) {
 
+    companion object {
+        @Volatile
+        var cachedRootItems: List<FileItem>? = null
+    }
+
     val rootStorageDirectory: File
         get() = try {
             val ext = Environment.getExternalStorageDirectory()
-            if (ext.exists() && ext.canRead()) ext else context.filesDir
+            if (ext.exists() && ext.canRead()) {
+                ext
+            } else {
+                val sampleDir = File(context.filesDir, "MiExplorer")
+                if (sampleDir.exists()) sampleDir else context.filesDir
+            }
         } catch (e: Exception) {
             context.filesDir
         }
+
+    fun getFastInitialRootItems(): List<FileItem> {
+        cachedRootItems?.let { if (it.isNotEmpty()) return it }
+        val root = rootStorageDirectory
+        return try {
+            val files = root.listFiles()
+            if (files != null && files.isNotEmpty()) {
+                val list = ArrayList<FileItem>(files.size)
+                for (file in files) {
+                    val name = file.name
+                    if (name.startsWith(".")) continue
+                    val isDir = file.isDirectory
+                    val dotIdx = name.lastIndexOf('.')
+                    val ext = if (!isDir && dotIdx > 0) name.substring(dotIdx + 1).lowercase(java.util.Locale.ROOT) else ""
+                    list.add(
+                        FileItem(
+                            file = file,
+                            name = name,
+                            path = file.absolutePath,
+                            isDirectory = isDir,
+                            size = if (isDir) 0L else file.length(),
+                            lastModified = file.lastModified(),
+                            isHidden = false,
+                            extension = ext,
+                            itemCount = 0
+                        )
+                    )
+                }
+                val sorted = com.mi.explorer.data.model.sortFileList(list, SortType.NAME_ASC, foldersOnTop = true)
+                cachedRootItems = sorted
+                sorted
+            } else {
+                emptyList()
+            }
+        } catch (e: Exception) {
+            emptyList()
+        }
+    }
 
     val downloadsDirectory: File
         get() = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS).let {
@@ -200,17 +248,8 @@ class FileRepository(private val context: Context) {
     private fun createSampleWavFile(file: File) {
         try {
             val sampleRate = 8000
-            val numSeconds = 4
-            val numSamples = sampleRate * numSeconds
+            val numSamples = 4000
             val buffer = ByteArray(numSamples)
-            val freqs = listOf(523.25, 659.25, 783.99, 1046.50)
-            for (i in 0 until numSamples) {
-                val sec = i / sampleRate
-                val freq = freqs[(sec % freqs.size)]
-                val angle = 2.0 * Math.PI * i / (sampleRate / freq)
-                val sample = (Math.sin(angle) * 127 + 128).toInt().toByte()
-                buffer[i] = sample
-            }
 
             FileOutputStream(file).use { out ->
                 val totalDataLen = buffer.size + 36
@@ -299,34 +338,56 @@ class FileRepository(private val context: Context) {
         searchQuery: String = ""
     ): List<FileItem> = withContext(Dispatchers.IO) {
         val files = directory.listFiles() ?: return@withContext emptyList()
-        var items = files.map { file ->
-            if (file.isDirectory) {
-                val count = file.list()?.size ?: 0
-                FileItem(
-                    file = file,
-                    size = 0L,
-                    folderSize = null,
-                    itemCount = count
+        val isSearching = searchQuery.isNotBlank()
+        val query = if (isSearching) searchQuery.trim().lowercase(java.util.Locale.ROOT) else ""
+
+        val items = ArrayList<FileItem>(files.size)
+        for (file in files) {
+            val name = file.name
+            val isHidden = name.startsWith(".")
+            if (!showHidden && isHidden) continue
+
+            if (isSearching && !name.lowercase(java.util.Locale.ROOT).contains(query)) continue
+
+            val isDir = file.isDirectory
+            if (isDir) {
+                items.add(
+                    FileItem(
+                        file = file,
+                        name = name,
+                        path = file.absolutePath,
+                        isDirectory = true,
+                        size = 0L,
+                        lastModified = file.lastModified(),
+                        isHidden = isHidden,
+                        extension = "",
+                        itemCount = 0
+                    )
                 )
             } else {
-                FileItem(
-                    file = file,
-                    size = file.length(),
-                    itemCount = 0
+                val dotIndex = name.lastIndexOf('.')
+                val ext = if (dotIndex > 0) name.substring(dotIndex + 1).lowercase(java.util.Locale.ROOT) else ""
+                items.add(
+                    FileItem(
+                        file = file,
+                        name = name,
+                        path = file.absolutePath,
+                        isDirectory = false,
+                        size = file.length(),
+                        lastModified = file.lastModified(),
+                        isHidden = isHidden,
+                        extension = ext,
+                        itemCount = 0
+                    )
                 )
             }
         }
 
-        if (!showHidden) {
-            items = items.filter { !it.isHidden }
+        val sorted = com.mi.explorer.data.model.sortFileList(items, sortType, foldersOnTop)
+        if (directory.absolutePath == rootStorageDirectory.absolutePath && !isSearching && !showHidden) {
+            cachedRootItems = sorted
         }
-
-        if (searchQuery.isNotBlank()) {
-            val query = searchQuery.trim().lowercase(java.util.Locale.ROOT)
-            items = items.filter { it.name.lowercase(java.util.Locale.ROOT).contains(query) }
-        }
-
-        com.mi.explorer.data.model.sortFileList(items, sortType, foldersOnTop)
+        sorted
     }
 
     suspend fun getRecentFiles(): List<FileItem> = withContext(Dispatchers.IO) {

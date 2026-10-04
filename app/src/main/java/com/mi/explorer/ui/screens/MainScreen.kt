@@ -886,7 +886,7 @@ fun RecentTabContent(
             }
         }
 
-        if (isLoading) {
+        if (isLoading && filteredList.isEmpty()) {
             item {
                 Box(
                     modifier = Modifier
@@ -1605,7 +1605,7 @@ fun StorageTabContent(
         }
 
         // Folder files listing
-        if (storageState.isLoading) {
+        if (storageState.isLoading && storageState.items.isEmpty()) {
             item {
                 Box(
                     modifier = Modifier

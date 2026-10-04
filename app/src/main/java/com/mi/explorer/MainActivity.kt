@@ -288,8 +288,7 @@ fun MiMainApp(viewModel: ExplorerViewModel) {
             arrayOf(
                 Manifest.permission.READ_MEDIA_IMAGES,
                 Manifest.permission.READ_MEDIA_VIDEO,
-                Manifest.permission.READ_MEDIA_AUDIO,
-                Manifest.permission.POST_NOTIFICATIONS
+                Manifest.permission.READ_MEDIA_AUDIO
             )
         } else {
             arrayOf(

@@ -175,7 +175,14 @@ class ExplorerViewModel(application: Application) : AndroidViewModel(application
 
     // Storage Tab State
     private val initialDir = fileRepository.rootStorageDirectory
-    private val _storageState = MutableStateFlow(StorageTabState(currentDir = initialDir))
+    private val initialItems = fileRepository.getFastInitialRootItems()
+    private val _storageState = MutableStateFlow(
+        StorageTabState(
+            currentDir = initialDir,
+            items = initialItems,
+            isLoading = false
+        )
+    )
     val storageState: StateFlow<StorageTabState> = _storageState.asStateFlow()
 
     // Storage capacity overview
@@ -377,7 +384,10 @@ class ExplorerViewModel(application: Application) : AndroidViewModel(application
         loadDirectory(initialDir)
         loadFavorites()
         loadTags()
-        loadStorageVolumes()
+        viewModelScope.launch(Dispatchers.IO) {
+            delay(150)
+            loadStorageVolumes()
+        }
 
         webShareServer.onStateChanged = { state ->
             _webShareState.value = state
@@ -475,20 +485,25 @@ class ExplorerViewModel(application: Application) : AndroidViewModel(application
     fun loadDirectory(dir: File, addToHistory: Boolean = false) {
         viewModelScope.launch {
             val current = _storageState.value
-            val newBackStack = if (addToHistory && current.currentDir != dir) {
+            val isSameDir = current.currentDir.absolutePath == dir.absolutePath
+            val hasItems = isSameDir && current.items.isNotEmpty()
+
+            val newBackStack = if (addToHistory && !isSameDir) {
                 current.backStack + current.currentDir
             } else {
                 current.backStack
             }
 
-            _storageState.update {
-                it.copy(
-                    currentDir = dir,
-                    backStack = newBackStack,
-                    forwardStack = emptyList(),
-                    selectedItems = emptySet(),
-                    isLoading = true
-                )
+            if (!hasItems) {
+                _storageState.update {
+                    it.copy(
+                        currentDir = dir,
+                        backStack = newBackStack,
+                        forwardStack = emptyList(),
+                        selectedItems = emptySet(),
+                        isLoading = true
+                    )
+                }
             }
 
             val items = fileRepository.listFiles(
@@ -500,7 +515,13 @@ class ExplorerViewModel(application: Application) : AndroidViewModel(application
             )
 
             _storageState.update {
-                it.copy(items = items, isLoading = false)
+                it.copy(
+                    currentDir = dir,
+                    backStack = newBackStack,
+                    forwardStack = if (isSameDir) it.forwardStack else emptyList(),
+                    items = items,
+                    isLoading = false
+                )
             }
         }
     }

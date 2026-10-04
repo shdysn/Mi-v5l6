@@ -165,14 +165,14 @@ data class FileItem(
 
     val formattedSize: String
         get() = if (isDirectory) {
-            val itemStr = "$itemCount item${if (itemCount == 1) "" else "s"}"
             val s = effectiveSize
             if (s > 0L) {
+                val itemStr = "$itemCount item${if (itemCount == 1) "" else "s"}"
                 "${formatBytes(s)} • $itemStr"
             } else if (itemCount > 0) {
-                itemStr
+                "$itemCount item${if (itemCount == 1) "" else "s"}"
             } else {
-                "0 B • 0 items"
+                "Folder"
             }
         } else {
             formatBytes(size)
