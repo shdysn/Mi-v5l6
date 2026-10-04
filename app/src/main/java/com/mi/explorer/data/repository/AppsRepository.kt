@@ -47,18 +47,9 @@ class AppsRepository(private val context: Context) {
             // MediaStore fallback to filesystem scan
         }
 
-        // 2. Comprehensive filesystem search across external storage
+        // 2. Focused filesystem search across primary download and document folders
         val extStorage = Environment.getExternalStorageDirectory()
         val searchDirs = mutableListOf<File>()
-
-        if (extStorage != null && extStorage.exists() && extStorage.canRead()) {
-            searchDirs.add(extStorage)
-            extStorage.listFiles()?.forEach { child ->
-                if (child.isDirectory && !child.name.startsWith(".") && !child.name.equals("Android", ignoreCase = true)) {
-                    searchDirs.add(child)
-                }
-            }
-        }
 
         val specificFolders = listOfNotNull(
             Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS),
@@ -69,23 +60,31 @@ class AppsRepository(private val context: Context) {
             File(extStorage, "WhatsApp/Media/WhatsApp Documents"),
             File(extStorage, "Telegram/Telegram Documents"),
             File(extStorage, "ShareMe"),
-            File(extStorage, "SHAREit"),
-            File(extStorage, "Xender"),
             File(extStorage, "Apks"),
             File(extStorage, "Apps"),
-            File(extStorage, "ADM"),
-            File(extStorage, "1DM"),
             File(context.filesDir, "MiExplorer/APKs"),
             File(context.filesDir, "MiExplorer/Backup"),
             File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), "MiExplorer/Backup"),
-            File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), "MiExplorer/APKs"),
-            context.getExternalFilesDir(null)
+            File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), "MiExplorer/APKs")
         ).filter { it.exists() && it.canRead() }
 
         searchDirs.addAll(specificFolders)
 
+        // Shallow check for root storage directory only (depth 0)
+        if (extStorage != null && extStorage.exists() && extStorage.canRead()) {
+            extStorage.listFiles()?.forEach { f ->
+                if (f.isFile) {
+                    val ext = f.extension.lowercase()
+                    if (ext in listOf("apk", "xapk", "apks") && seenPaths.add(f.absolutePath)) {
+                        foundApkFiles.add(f)
+                    }
+                }
+            }
+        }
+
         for (dir in searchDirs.distinct()) {
-            scanApkFilesRecursively(dir, foundApkFiles, seenPaths, currentDepth = 0, maxDepth = 3)
+            scanApkFilesRecursively(dir, foundApkFiles, seenPaths, currentDepth = 0, maxDepth = 2)
+            if (foundApkFiles.size >= 100) break
         }
 
         // If no APK files are found on storage in clean test container, auto-backup the app APK as a sample

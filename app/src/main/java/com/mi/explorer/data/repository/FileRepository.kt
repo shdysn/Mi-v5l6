@@ -5,6 +5,7 @@ import android.os.Environment
 import android.os.StatFs
 import android.provider.MediaStore
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import com.mi.explorer.data.model.FileCategory
 import com.mi.explorer.data.model.FileItem
@@ -64,7 +65,7 @@ class FileRepository(private val context: Context) {
             if (it.exists()) it else File(rootStorageDirectory, "DCIM")
         }
 
-    fun getStorageVolumes(): List<StorageVolumeItem> {
+    suspend fun getStorageVolumes(): List<StorageVolumeItem> = withContext(Dispatchers.IO) {
         val list = mutableListOf<StorageVolumeItem>()
         // 1. Primary Internal Storage
         val primaryDir = rootStorageDirectory
@@ -118,7 +119,7 @@ class FileRepository(private val context: Context) {
             // ignore
         }
 
-        return list
+        list
     }
 
     private fun getRootOfVolume(file: File): File? {
@@ -143,7 +144,9 @@ class FileRepository(private val context: Context) {
         }
 
     init {
-        ensureMiExplorerSampleData()
+        kotlinx.coroutines.CoroutineScope(Dispatchers.IO).launch {
+            ensureMiExplorerSampleData()
+        }
     }
 
     private fun ensureMiExplorerSampleData() {
@@ -299,11 +302,10 @@ class FileRepository(private val context: Context) {
         var items = files.map { file ->
             if (file.isDirectory) {
                 val count = file.list()?.size ?: 0
-                val dirSize = calculateDirectorySize(file, maxDepth = 3)
                 FileItem(
                     file = file,
-                    size = dirSize,
-                    folderSize = dirSize,
+                    size = 0L,
+                    folderSize = null,
                     itemCount = count
                 )
             } else {

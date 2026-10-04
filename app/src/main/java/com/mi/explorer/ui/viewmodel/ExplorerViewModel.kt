@@ -7,6 +7,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import com.mi.explorer.data.model.*
 import com.mi.explorer.data.repository.*
@@ -313,7 +314,19 @@ class ExplorerViewModel(application: Application) : AndroidViewModel(application
     val fastShareState: StateFlow<FastShareState> = _fastShareState.asStateFlow()
 
     // 4. Multi-Storage Volumes (Internal, SD Card, USB OTG)
-    private val _storageVolumes = MutableStateFlow<List<StorageVolumeItem>>(emptyList())
+    private val _storageVolumes = MutableStateFlow(
+        listOf(
+            StorageVolumeItem(
+                id = "internal_storage",
+                name = "Internal Storage",
+                file = initialDir,
+                type = VolumeType.INTERNAL,
+                totalBytes = 64L * 1024 * 1024 * 1024,
+                freeBytes = 38L * 1024 * 1024 * 1024,
+                isPrimary = true
+            )
+        )
+    )
     val storageVolumes: StateFlow<List<StorageVolumeItem>> = _storageVolumes.asStateFlow()
     val selectedVolume = MutableStateFlow<StorageVolumeItem?>(null)
 
@@ -333,7 +346,7 @@ class ExplorerViewModel(application: Application) : AndroidViewModel(application
 
     // 8. Wireless Web Share (HTTP Server)
     private val webShareServer = WebShareServer(application)
-    private val _webShareState = MutableStateFlow(WebShareState(ipAddress = webShareServer.getLocalIpAddress()))
+    private val _webShareState = MutableStateFlow(WebShareState(ipAddress = ""))
     val webShareState: StateFlow<WebShareState> = _webShareState.asStateFlow()
 
     // 9. Military-Grade File Shredder
@@ -362,13 +375,9 @@ class ExplorerViewModel(application: Application) : AndroidViewModel(application
     init {
         refreshStorage()
         loadDirectory(initialDir)
-        loadRecentFiles()
         loadFavorites()
-        loadTrashItems()
-        loadStorageApks()
         loadTags()
         loadStorageVolumes()
-        loadSmartCollections()
 
         webShareServer.onStateChanged = { state ->
             _webShareState.value = state
@@ -449,7 +458,9 @@ class ExplorerViewModel(application: Application) : AndroidViewModel(application
             fileRepository.rootStorageDirectory
         }
         loadDirectory(targetDir)
-        loadRecentFiles()
+        if (_selectedTab.value == MiTab.RECENT) {
+            loadRecentFiles()
+        }
     }
 
     fun loadRecentFiles() {
@@ -525,7 +536,9 @@ class ExplorerViewModel(application: Application) : AndroidViewModel(application
     fun refreshCurrentDirectory() {
         loadDirectory(_storageState.value.currentDir, addToHistory = false)
         refreshStorage()
-        loadRecentFiles()
+        if (_selectedTab.value == MiTab.RECENT) {
+            loadRecentFiles()
+        }
     }
 
     fun toggleViewMode() {
@@ -2074,10 +2087,12 @@ class ExplorerViewModel(application: Application) : AndroidViewModel(application
     // 4. Multi-Storage Volumes (Internal, SD Card, USB OTG)
     // ==========================================
     fun loadStorageVolumes() {
-        val vols = fileRepository.getStorageVolumes()
-        _storageVolumes.value = vols
-        if (selectedVolume.value == null && vols.isNotEmpty()) {
-            selectedVolume.value = vols.first()
+        viewModelScope.launch(Dispatchers.IO) {
+            val vols = fileRepository.getStorageVolumes()
+            _storageVolumes.value = vols
+            if (selectedVolume.value == null && vols.isNotEmpty()) {
+                selectedVolume.value = vols.first()
+            }
         }
     }
 
@@ -2296,7 +2311,10 @@ class ExplorerViewModel(application: Application) : AndroidViewModel(application
 
     fun openWebShare() {
         if (!_webShareState.value.isRunning) {
-            _webShareState.update { it.copy(ipAddress = webShareServer.getLocalIpAddress()) }
+            viewModelScope.launch(Dispatchers.IO) {
+                val ip = webShareServer.getLocalIpAddress()
+                _webShareState.update { it.copy(ipAddress = ip) }
+            }
         }
         navigateToScreen(Screen.WEB_SHARE)
     }

@@ -126,18 +126,21 @@ object ThumbnailLoader {
         val retriever = MediaMetadataRetriever()
         return try {
             retriever.setDataSource(file.absolutePath)
-            // Extract frame at 1 second (or first available frame)
-            val frame = retriever.getFrameAtTime(1_000_000, MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
-                ?: retriever.frameAtTime
-
-            frame?.let { src ->
-                if (src.width > reqWidth || src.height > reqHeight) {
-                    val scale = Math.min(reqWidth.toFloat() / src.width, reqHeight.toFloat() / src.height)
-                    val w = (src.width * scale).toInt().coerceAtLeast(1)
-                    val h = (src.height * scale).toInt().coerceAtLeast(1)
-                    Bitmap.createScaledBitmap(src, w, h, true)
-                } else {
-                    src
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
+                retriever.getScaledFrameAtTime(1_000_000, MediaMetadataRetriever.OPTION_CLOSEST_SYNC, reqWidth, reqHeight)
+                    ?: retriever.getScaledFrameAtTime(-1, MediaMetadataRetriever.OPTION_CLOSEST_SYNC, reqWidth, reqHeight)
+            } else {
+                val frame = retriever.getFrameAtTime(1_000_000, MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
+                    ?: retriever.frameAtTime
+                frame?.let { src ->
+                    if (src.width > reqWidth || src.height > reqHeight) {
+                        val scale = Math.min(reqWidth.toFloat() / src.width, reqHeight.toFloat() / src.height)
+                        val w = (src.width * scale).toInt().coerceAtLeast(1)
+                        val h = (src.height * scale).toInt().coerceAtLeast(1)
+                        Bitmap.createScaledBitmap(src, w, h, true)
+                    } else {
+                        src
+                    }
                 }
             }
         } catch (e: Exception) {
@@ -154,7 +157,7 @@ object ThumbnailLoader {
     private fun decodeApkIcon(context: Context, file: File, reqWidth: Int, reqHeight: Int): Bitmap? {
         return try {
             val pm = context.packageManager
-            val info = pm.getPackageArchiveInfo(file.absolutePath, PackageManager.GET_ACTIVITIES) ?: return null
+            val info = pm.getPackageArchiveInfo(file.absolutePath, 0) ?: return null
             info.applicationInfo?.let { appInfo ->
                 appInfo.sourceDir = file.absolutePath
                 appInfo.publicSourceDir = file.absolutePath
@@ -207,14 +210,12 @@ object ThumbnailLoader {
     @Composable
     fun rememberThumbnailState(file: File, category: FileCategory): State<Bitmap?> {
         val context = LocalContext.current
-        val cacheKey = "${file.absolutePath}_${file.lastModified()}"
+        val cacheKey = "${file.absolutePath}_${file.lastModified()}_128x128"
         val initial = remember(cacheKey) { memoryCache.get(cacheKey) }
 
-        return produceState<Bitmap?>(initialValue = initial, key1 = file.absolutePath, key2 = file.lastModified()) {
-            if (category == FileCategory.IMAGE || category == FileCategory.VIDEO || category == FileCategory.APK) {
-                value = loadThumbnail(context, file, category)
-            } else {
-                value = null
+        return produceState<Bitmap?>(initialValue = initial, key1 = cacheKey) {
+            if (value == null && (category == FileCategory.IMAGE || category == FileCategory.VIDEO || category == FileCategory.APK)) {
+                value = loadThumbnail(context, file, category, 128, 128)
             }
         }
     }

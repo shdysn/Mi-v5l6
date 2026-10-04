@@ -78,14 +78,22 @@ object FileIconHelper {
     val ConfigTeal = Color(0xFF14B8A6)
     val UnknownGray = Color(0xFF94A3B8)
 
+    private val folderDescriptorCache = java.util.concurrent.ConcurrentHashMap<String, FileIconDescriptor>()
+    private val fileDescriptorCache = java.util.concurrent.ConcurrentHashMap<String, FileIconDescriptor>()
+
     /**
      * Determine the icon descriptor for a FileItem.
      */
     fun getDescriptor(item: FileItem): FileIconDescriptor {
         return if (item.isDirectory) {
-            getFolderDescriptor(item.name)
+            folderDescriptorCache.getOrPut(item.name.lowercase(Locale.ROOT).trim()) {
+                getFolderDescriptor(item.name)
+            }
         } else {
-            getFileDescriptor(item.name, item.extension, item.category)
+            val key = "${item.extension.lowercase(Locale.ROOT).trim()}_${item.category.name}"
+            fileDescriptorCache.getOrPut(key) {
+                getFileDescriptor(item.name, item.extension, item.category)
+            }
         }
     }
 
@@ -94,11 +102,16 @@ object FileIconHelper {
      */
     fun getDescriptor(file: File): FileIconDescriptor {
         return if (file.isDirectory) {
-            getFolderDescriptor(file.name)
+            folderDescriptorCache.getOrPut(file.name.lowercase(Locale.ROOT).trim()) {
+                getFolderDescriptor(file.name)
+            }
         } else {
-            val ext = file.extension.lowercase(Locale.ROOT)
+            val ext = file.extension.lowercase(Locale.ROOT).trim()
             val category = FileItem(file).category
-            getFileDescriptor(file.name, ext, category)
+            val key = "${ext}_${category.name}"
+            fileDescriptorCache.getOrPut(key) {
+                getFileDescriptor(file.name, ext, category)
+            }
         }
     }
 
