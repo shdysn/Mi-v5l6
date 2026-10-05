@@ -29,6 +29,8 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import com.mi.explorer.data.model.FileItem
 import com.mi.explorer.ui.components.ApkInstallDialog
 import com.mi.explorer.ui.components.ChecksumDialog
@@ -307,10 +309,12 @@ fun MiMainApp(viewModel: ExplorerViewModel) {
         }
     }
 
-    // Request permissions on launch if not granted
+    // Request permissions on launch if not granted (performed off Main Thread to avoid binder IPC stall)
     LaunchedEffect(Unit) {
-        val hasMissing = permissionsToRequest.any {
-            ContextCompat.checkSelfPermission(context, it) != PackageManager.PERMISSION_GRANTED
+        val hasMissing = withContext(Dispatchers.IO) {
+            permissionsToRequest.any {
+                ContextCompat.checkSelfPermission(context, it) != PackageManager.PERMISSION_GRANTED
+            }
         }
         if (hasMissing) {
             permissionLauncher.launch(permissionsToRequest)

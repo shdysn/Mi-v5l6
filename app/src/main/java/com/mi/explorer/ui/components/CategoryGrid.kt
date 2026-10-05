@@ -32,6 +32,20 @@ data class MiCategory(
     val isSocial: Boolean = false
 )
 
+private val categoryRow1 = listOf(
+    MiCategory("Images", Icons.Default.Image, Color.White, MiBlue, FileCategory.IMAGE),
+    MiCategory("Videos", Icons.Default.Movie, Color.White, MiPurple, FileCategory.VIDEO),
+    MiCategory("Music", Icons.Default.Audiotrack, Color.White, MiRed, FileCategory.AUDIO),
+    MiCategory("Docs", Icons.Default.Description, Color.White, MiYellow, FileCategory.DOCUMENT)
+)
+
+private val categoryRow2 = listOf(
+    MiCategory("App Installer", Icons.Default.InstallMobile, Color.White, MiGreen, FileCategory.APK),
+    MiCategory("Downloads", Icons.Default.Download, Color.White, MiCyan, null),
+    MiCategory("Archives", Icons.Default.FolderZip, Color.White, MiAmber, FileCategory.ARCHIVE),
+    MiCategory("Social", Icons.Default.Chat, Color.White, Color(0xFF25D366), null, isSocial = true)
+)
+
 /**
  * Compact, modern 4x2 Category Grid inspired by Xiaomi MIUI / HyperOS and Google Files.
  * Uses a balanced 4-column layout that cuts vertical screen consumption in half,
@@ -44,19 +58,8 @@ fun CategoryGrid(
     onSocialClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val row1 = listOf(
-        MiCategory("Images", Icons.Default.Image, Color.White, MiBlue, FileCategory.IMAGE),
-        MiCategory("Videos", Icons.Default.Movie, Color.White, MiPurple, FileCategory.VIDEO),
-        MiCategory("Music", Icons.Default.Audiotrack, Color.White, MiRed, FileCategory.AUDIO),
-        MiCategory("Docs", Icons.Default.Description, Color.White, MiYellow, FileCategory.DOCUMENT)
-    )
-
-    val row2 = listOf(
-        MiCategory("App Installer", Icons.Default.InstallMobile, Color.White, MiGreen, FileCategory.APK),
-        MiCategory("Downloads", Icons.Default.Download, Color.White, MiCyan, null),
-        MiCategory("Archives", Icons.Default.FolderZip, Color.White, MiAmber, FileCategory.ARCHIVE),
-        MiCategory("Social", Icons.Default.Chat, Color.White, Color(0xFF25D366), null, isSocial = true)
-    )
+    val row1 = categoryRow1
+    val row2 = categoryRow2
 
     Column(
         modifier = modifier

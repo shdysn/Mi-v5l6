@@ -385,7 +385,8 @@ class FileRepository(private val context: Context) {
         try {
             val projection = arrayOf(
                 MediaStore.Files.FileColumns.DATA,
-                MediaStore.Files.FileColumns.DATE_MODIFIED
+                MediaStore.Files.FileColumns.DATE_MODIFIED,
+                MediaStore.Files.FileColumns.SIZE
             )
             val uri = MediaStore.Files.getContentUri("external")
             val selection = "${MediaStore.Files.FileColumns.SIZE} > 0"
@@ -393,23 +394,30 @@ class FileRepository(private val context: Context) {
 
             context.contentResolver.query(uri, projection, selection, null, sortOrder)?.use { cursor ->
                 val dataCol = cursor.getColumnIndex(MediaStore.Files.FileColumns.DATA)
+                val dateCol = cursor.getColumnIndex(MediaStore.Files.FileColumns.DATE_MODIFIED)
+                val sizeCol = cursor.getColumnIndex(MediaStore.Files.FileColumns.SIZE)
                 if (dataCol != -1) {
                     while (cursor.moveToNext() && list.size < 60) {
                         val path = cursor.getString(dataCol)
                         if (!path.isNullOrEmpty() && seenPaths.add(path)) {
                             val f = File(path)
                             val name = f.name
-                            if (f.exists() && !f.isDirectory && !name.startsWith(".")) {
+                            if (!name.startsWith(".")) {
                                 val dotIdx = name.lastIndexOf('.')
                                 val ext = if (dotIdx > 0) name.substring(dotIdx + 1).lowercase(java.util.Locale.ROOT) else ""
+                                val fileSize = if (sizeCol != -1) cursor.getLong(sizeCol) else f.length()
+                                val fileDate = if (dateCol != -1) {
+                                    val sec = cursor.getLong(dateCol)
+                                    if (sec > 100000000000L) sec else sec * 1000L
+                                } else f.lastModified()
                                 list.add(
                                     FileItem(
                                         file = f,
                                         name = name,
                                         path = f.absolutePath,
                                         isDirectory = false,
-                                        size = f.length(),
-                                        lastModified = f.lastModified(),
+                                        size = fileSize,
+                                        lastModified = fileDate,
                                         isHidden = false,
                                         extension = ext,
                                         itemCount = 0
@@ -494,16 +502,42 @@ class FileRepository(private val context: Context) {
             }
 
             if (uri != null) {
-                val projection = arrayOf(MediaStore.MediaColumns.DATA)
+                val projection = arrayOf(
+                    MediaStore.MediaColumns.DATA,
+                    MediaStore.MediaColumns.SIZE,
+                    MediaStore.MediaColumns.DATE_MODIFIED
+                )
                 context.contentResolver.query(uri, projection, selection, null, sortOrder)?.use { cursor ->
                     val dataCol = cursor.getColumnIndex(MediaStore.MediaColumns.DATA)
+                    val sizeCol = cursor.getColumnIndex(MediaStore.MediaColumns.SIZE)
+                    val dateCol = cursor.getColumnIndex(MediaStore.MediaColumns.DATE_MODIFIED)
                     if (dataCol != -1) {
                         while (cursor.moveToNext() && list.size < 300) {
                             val path = cursor.getString(dataCol)
                             if (!path.isNullOrEmpty() && seenPaths.add(path)) {
                                 val f = File(path)
-                                if (f.exists() && !f.isDirectory) {
-                                    list.add(FileItem(f))
+                                val name = f.name
+                                if (!name.startsWith(".")) {
+                                    val dotIdx = name.lastIndexOf('.')
+                                    val ext = if (dotIdx > 0) name.substring(dotIdx + 1).lowercase(java.util.Locale.ROOT) else ""
+                                    val fileSize = if (sizeCol != -1) cursor.getLong(sizeCol) else f.length()
+                                    val fileDate = if (dateCol != -1) {
+                                        val sec = cursor.getLong(dateCol)
+                                        if (sec > 100000000000L) sec else sec * 1000L
+                                    } else f.lastModified()
+                                    list.add(
+                                        FileItem(
+                                            file = f,
+                                            name = name,
+                                            path = f.absolutePath,
+                                            isDirectory = false,
+                                            size = fileSize,
+                                            lastModified = fileDate,
+                                            isHidden = false,
+                                            extension = ext,
+                                            itemCount = 0
+                                        )
+                                    )
                                 }
                             }
                         }

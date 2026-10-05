@@ -200,11 +200,16 @@ data class FileItem(
 
     companion object {
         fun formatBytes(bytes: Long): String {
-            if (bytes <= 0) return "0 B"
-            val units = arrayOf("B", "KB", "MB", "GB", "TB")
-            val digitGroups = (Math.log10(bytes.toDouble()) / Math.log10(1024.0)).toInt().coerceIn(0, units.size - 1)
-            val value = bytes / Math.pow(1024.0, digitGroups.toDouble())
-            return String.format(Locale.US, "%.1f %s", value, units[digitGroups])
+            if (bytes <= 0L) return "0 B"
+            if (bytes < 1024L) return "$bytes B"
+            val kb = bytes / 1024.0
+            if (kb < 1024.0) return String.format(Locale.US, "%.1f KB", kb)
+            val mb = kb / 1024.0
+            if (mb < 1024.0) return String.format(Locale.US, "%.1f MB", mb)
+            val gb = mb / 1024.0
+            if (gb < 1024.0) return String.format(Locale.US, "%.2f GB", gb)
+            val tb = gb / 1024.0
+            return String.format(Locale.US, "%.2f TB", tb)
         }
     }
 }
