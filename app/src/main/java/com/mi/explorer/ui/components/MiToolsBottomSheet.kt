@@ -67,8 +67,8 @@ fun MiToolsBottomSheet(
         ),
         ToolItem(
             id = "app_installer",
-            title = "App Installer",
-            subtitle = "Install APK, XAPK, APKS",
+            title = "APKs",
+            subtitle = "Install APK files",
             icon = Icons.Default.InstallMobile,
             iconColor = Color(0xFF059669),
             onClick = { onDismiss(); onAppInstallerClick() }

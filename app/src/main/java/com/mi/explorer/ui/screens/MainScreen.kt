@@ -1238,7 +1238,7 @@ fun StorageTabContent(
                     ) {
                         listOf(
                             Triple("Home Widget", "Pin Storage Card", Icons.Default.Widgets to Color(0xFF0EA5E9)) to onPinWidgetClick,
-                            Triple("App Installer", "Install APK / XAPK", Icons.Default.InstallMobile to Color(0xFF059669)) to onAppInstallerClick,
+                            Triple("APKs", "Install APK files", Icons.Default.InstallMobile to Color(0xFF059669)) to onAppInstallerClick,
                             Triple("Status Saver", "WhatsApp Status", Icons.Default.BookmarkAdded to Color(0xFF10B981)) to onStatusSaverClick,
                             Triple("PC Web Portal", "Send & Receive", Icons.Default.Language to Color(0xFF2563EB)) to onWebShareClick,
                             Triple("Smart Hubs", "Auto Collections", Icons.Default.AutoAwesomeMosaic to Color(0xFF8B5CF6)) to onSmartCollectionsClick,

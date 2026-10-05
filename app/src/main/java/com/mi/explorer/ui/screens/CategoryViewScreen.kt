@@ -153,7 +153,7 @@ fun CategoryViewScreen(
                         ) {
                             Icon(Icons.Default.InstallMobile, contentDescription = null, modifier = Modifier.size(16.dp))
                             Spacer(modifier = Modifier.width(4.dp))
-                            Text("App Installer", style = MaterialTheme.typography.labelMedium)
+                            Text("APKs", style = MaterialTheme.typography.labelMedium)
                         }
                     }
                 }

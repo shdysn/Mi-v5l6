@@ -40,7 +40,7 @@ private val categoryRow1 = listOf(
 )
 
 private val categoryRow2 = listOf(
-    MiCategory("App Installer", Icons.Default.InstallMobile, Color.White, MiGreen, FileCategory.APK),
+    MiCategory("APKs", Icons.Default.InstallMobile, Color.White, MiGreen, FileCategory.APK),
     MiCategory("Downloads", Icons.Default.Download, Color.White, MiCyan, null),
     MiCategory("Archives", Icons.Default.FolderZip, Color.White, MiAmber, FileCategory.ARCHIVE),
     MiCategory("Social", Icons.Default.Chat, Color.White, Color(0xFF25D366), null, isSocial = true)

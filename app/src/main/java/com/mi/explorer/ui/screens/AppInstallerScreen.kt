@@ -1,6 +1,5 @@
 package com.mi.explorer.ui.screens
 
-import android.content.Context
 import android.net.Uri
 import android.os.Build
 import android.provider.OpenableColumns
@@ -27,7 +26,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -38,21 +36,11 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.mi.explorer.data.model.ApkFileItem
-import com.mi.explorer.data.model.ApkTab
-import com.mi.explorer.data.model.FileItem
 import com.mi.explorer.ui.components.ApkInstallDialog
-import com.mi.explorer.ui.components.ChecksumDialog
-import com.mi.explorer.ui.theme.MiBlue
 import com.mi.explorer.ui.theme.MiGreen
 import com.mi.explorer.ui.theme.MiOrange
 import com.mi.explorer.ui.viewmodel.ExplorerViewModel
 import com.mi.explorer.utils.FileOpener
-import com.mi.explorer.utils.InAppPackageInstallerHelper
-import com.mi.explorer.utils.InstallSessionEvent
-import com.mi.explorer.utils.InstallerStatusBus
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.flow.collectLatest
-import kotlinx.coroutines.launch
 import java.io.File
 import java.io.FileOutputStream
 
@@ -64,32 +52,18 @@ fun AppInstallerScreen(
 ) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
-    val scope = rememberCoroutineScope()
 
     val storageApks by viewModel.storageApks.collectAsStateWithLifecycle()
     val isLoading by viewModel.isStorageApksLoading.collectAsStateWithLifecycle()
 
     var searchQuery by remember { mutableStateOf("") }
-    var filterType by remember { mutableStateOf("ALL") } // ALL, READY, UPDATES, INSTALLED, DOWNGRADE
-    var selectedForBatch by remember { mutableStateOf(setOf<String>()) }
-    var isBatchMode by remember { mutableStateOf(false) }
-    var isBatchInstalling by remember { mutableStateOf(false) }
-    var batchProgressText by remember { mutableStateOf("") }
-
-    var checksumTarget by remember { mutableStateOf<FileItem?>(null) }
+    var isSearchVisible by remember { mutableStateOf(false) }
     var inspectingApk by remember { mutableStateOf<ApkFileItem?>(null) }
-    var autoStartDialogInstall by remember { mutableStateOf(false) }
     var apkToDelete by remember { mutableStateOf<ApkFileItem?>(null) }
-
-    // Check unknown app sources permission & dynamically refresh on ON_RESUME
-    var canInstallUnknown by remember {
-        mutableStateOf(FileOpener.canInstallUnknownApps(context))
-    }
 
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_RESUME) {
-                canInstallUnknown = FileOpener.canInstallUnknownApps(context)
                 viewModel.loadStorageApks()
             }
         }
@@ -99,28 +73,15 @@ fun AppInstallerScreen(
         }
     }
 
-    LaunchedEffect(Unit) {
-        InstallerStatusBus.events.collectLatest { event ->
-            when (event) {
-                is InstallSessionEvent.Success -> {
-                    viewModel.loadStorageApks()
-                    viewModel.loadApps()
-                }
-                else -> {}
-            }
-        }
-    }
-
     BackHandler {
-        if (isBatchMode) {
-            isBatchMode = false
-            selectedForBatch = emptySet()
+        if (isSearchVisible) {
+            isSearchVisible = false
+            searchQuery = ""
         } else {
             viewModel.handleBackPress()
         }
     }
 
-    // Direct File Picker for APK / XAPK / APKS
     val pickApkLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenMultipleDocuments()
     ) { uris: List<Uri> ->
@@ -138,13 +99,7 @@ fun AppInstallerScreen(
                             }
                         }
                     }
-                    if (!cacheFile.exists() || cacheFile.length() == 0L) {
-                        viewModel.showMessage("Selected file is empty or inaccessible")
-                        continue
-                    }
-                    if (displayName.lowercase().endsWith(".xapk") || displayName.lowercase().endsWith(".apks")) {
-                        viewModel.openXapkFile(cacheFile)
-                    } else {
+                    if (cacheFile.exists() && cacheFile.length() > 0L) {
                         viewModel.openApkInstallDialog(cacheFile)
                     }
                 } catch (e: Exception) {
@@ -154,18 +109,10 @@ fun AppInstallerScreen(
         }
     }
 
-    val filteredApks = remember(storageApks, searchQuery, filterType) {
-        val base = if (searchQuery.isBlank()) storageApks else storageApks.filter {
+    val filteredApks = remember(storageApks, searchQuery) {
+        if (searchQuery.isBlank()) storageApks else storageApks.filter {
             it.appName.contains(searchQuery, ignoreCase = true) ||
-            it.packageName.contains(searchQuery, ignoreCase = true) ||
             it.name.contains(searchQuery, ignoreCase = true)
-        }
-        when (filterType) {
-            "READY" -> base.filter { !it.isInstalled }
-            "UPDATES" -> base.filter { it.isUpgradeCandidate }
-            "INSTALLED" -> base.filter { it.isInstalled }
-            "DOWNGRADE" -> base.filter { it.isDowngradeCandidate }
-            else -> base
         }
     }
 
@@ -174,138 +121,58 @@ fun AppInstallerScreen(
         topBar = {
             TopAppBar(
                 title = {
-                    Column {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
+                    if (isSearchVisible) {
+                        OutlinedTextField(
+                            value = searchQuery,
+                            onValueChange = { searchQuery = it },
+                            placeholder = { Text("Search APKs...", fontSize = 14.sp) },
+                            singleLine = true,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(end = 8.dp),
+                            shape = RoundedCornerShape(20.dp),
+                            trailingIcon = {
+                                IconButton(onClick = {
+                                    if (searchQuery.isNotEmpty()) searchQuery = "" else isSearchVisible = false
+                                }) {
+                                    Icon(Icons.Default.Close, contentDescription = "Close")
+                                }
+                            }
+                        )
+                    } else {
+                        Column {
                             Text(
-                                text = "App Installer",
-                                style = MaterialTheme.typography.titleMedium,
+                                text = "APKs",
+                                style = MaterialTheme.typography.titleLarge,
                                 fontWeight = FontWeight.Bold
                             )
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Surface(
-                                shape = RoundedCornerShape(6.dp),
-                                color = MiGreen.copy(alpha = 0.15f)
-                            ) {
-                                Text(
-                                    text = "MIUI Package Engine",
-                                    color = Color(0xFF059669),
-                                    style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
-                                    fontWeight = FontWeight.Bold,
-                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                                )
-                            }
+                            Text(
+                                text = "${filteredApks.size} APK file${if (filteredApks.size == 1) "" else "s"}",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
                         }
-                        Text(
-                            text = "${filteredApks.size} package(s) detected • 1-tap install",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
                     }
                 },
                 navigationIcon = {
                     IconButton(
-                        onClick = {
-                            if (isBatchMode) {
-                                isBatchMode = false
-                                selectedForBatch = emptySet()
-                            } else {
-                                viewModel.handleBackPress()
-                            }
-                        },
+                        onClick = { viewModel.handleBackPress() },
                         modifier = Modifier.testTag("installer_back_button")
                     ) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
                     }
                 },
                 actions = {
-                    IconButton(onClick = { isBatchMode = !isBatchMode }) {
-                        Icon(
-                            imageVector = if (isBatchMode) Icons.Default.ChecklistRtl else Icons.Default.Checklist,
-                            contentDescription = "Batch Install",
-                            tint = if (isBatchMode) MiOrange else MaterialTheme.colorScheme.onSurfaceVariant
-                        )
+                    if (!isSearchVisible) {
+                        IconButton(onClick = { isSearchVisible = true }) {
+                            Icon(Icons.Default.Search, contentDescription = "Search")
+                        }
                     }
                     IconButton(onClick = { viewModel.loadStorageApks() }) {
-                        Icon(Icons.Default.Refresh, contentDescription = "Refresh APKs")
+                        Icon(Icons.Default.Refresh, contentDescription = "Refresh")
                     }
                 }
             )
-        },
-        bottomBar = {
-            AnimatedVisibility(visible = isBatchMode && selectedForBatch.isNotEmpty()) {
-                Surface(
-                    color = MaterialTheme.colorScheme.surface,
-                    tonalElevation = 8.dp,
-                    shadowElevation = 8.dp,
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 16.dp, vertical = 12.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                text = "${selectedForBatch.size} APKs selected",
-                                style = MaterialTheme.typography.titleSmall,
-                                fontWeight = FontWeight.Bold
-                            )
-                            if (isBatchInstalling && batchProgressText.isNotEmpty()) {
-                                Text(
-                                    text = batchProgressText,
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MiGreen,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
-                                )
-                            }
-                        }
-                        Button(
-                            enabled = !isBatchInstalling,
-                            onClick = {
-                                if (!FileOpener.canInstallUnknownApps(context)) {
-                                    canInstallUnknown = false
-                                    viewModel.showMessage("Please allow 'Install unknown apps' permission first")
-                                    FileOpener.requestInstallUnknownAppsPermission(context)
-                                    return@Button
-                                }
-                                val targets = storageApks.filter { it.path in selectedForBatch }
-                                if (targets.isEmpty()) return@Button
-
-                                scope.launch {
-                                    isBatchInstalling = true
-                                    for ((idx, target) in targets.withIndex()) {
-                                        batchProgressText = "Staging (${idx + 1}/${targets.size}): ${target.appName}"
-                                        InAppPackageInstallerHelper.installApkSession(
-                                            context = context,
-                                            apkFile = target.file,
-                                            packageName = target.packageName
-                                        ) { _, step ->
-                                            batchProgressText = "(${idx + 1}/${targets.size}) ${target.appName}: $step"
-                                        }
-                                        if (idx < targets.lastIndex) {
-                                            delay(1500)
-                                        }
-                                    }
-                                    isBatchInstalling = false
-                                    batchProgressText = ""
-                                    isBatchMode = false
-                                    selectedForBatch = emptySet()
-                                    viewModel.showMessage("Queued ${targets.size} package(s) for installation")
-                                }
-                            },
-                            colors = ButtonDefaults.buttonColors(containerColor = MiGreen),
-                            shape = RoundedCornerShape(12.dp)
-                        ) {
-                            Icon(Icons.Default.Download, contentDescription = null, modifier = Modifier.size(18.dp))
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text(if (isBatchInstalling) "Staging..." else "Install Selected (${selectedForBatch.size})")
-                        }
-                    }
-                }
-            }
         }
     ) { innerPadding ->
         LazyColumn(
@@ -313,217 +180,53 @@ fun AppInstallerScreen(
                 .fillMaxSize()
                 .padding(innerPadding),
             contentPadding = PaddingValues(16.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp)
+            verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-            // 1. Primary "Browse & Install APK" Hero Action Card
-            item {
-                Card(
-                    shape = RoundedCornerShape(20.dp),
-                    colors = CardDefaults.cardColors(
-                        containerColor = MiGreen.copy(alpha = 0.12f)
-                    ),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable {
-                            pickApkLauncher.launch(
-                                arrayOf(
-                                    "application/vnd.android.package-archive",
-                                    "application/octet-stream",
-                                    "*/*"
-                                )
-                            )
-                        }
-                ) {
-                    Row(
+            if (isLoading && storageApks.isEmpty()) {
+                item {
+                    Box(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(18.dp),
-                        verticalAlignment = Alignment.CenterVertically
+                            .padding(48.dp),
+                        contentAlignment = Alignment.Center
                     ) {
-                        Box(
-                            modifier = Modifier
-                                .size(52.dp)
-                                .clip(RoundedCornerShape(16.dp))
-                                .background(MiGreen),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Download,
-                                contentDescription = null,
-                                tint = Color.White,
-                                modifier = Modifier.size(28.dp)
-                            )
-                        }
-                        Spacer(modifier = Modifier.width(16.dp))
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                text = "Browse & Install APK File",
-                                style = MaterialTheme.typography.titleMedium,
-                                fontWeight = FontWeight.Bold,
-                                color = Color(0xFF047857)
-                            )
-                            Spacer(modifier = Modifier.height(2.dp))
-                            Text(
-                                text = "Pick any .apk, .xapk, or .apks file from Downloads, WhatsApp, Telegram, or internal storage.",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                        Icon(
-                            imageVector = Icons.Default.AddCircle,
-                            contentDescription = "Pick",
-                            tint = Color(0xFF047857),
-                            modifier = Modifier.size(24.dp)
-                        )
-                    }
-                }
-            }
-
-            // 2. Permission Banner if Install Unknown Apps is not granted
-            if (!canInstallUnknown && Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                item {
-                    Surface(
-                        shape = RoundedCornerShape(14.dp),
-                        color = Color(0xFFEF4444).copy(alpha = 0.12f),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Column(modifier = Modifier.padding(14.dp)) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Icon(Icons.Default.Security, contentDescription = null, tint = Color(0xFFEF4444), modifier = Modifier.size(20.dp))
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Text(
-                                    text = "Permission Required to Install Apps",
-                                    style = MaterialTheme.typography.titleSmall,
-                                    fontWeight = FontWeight.Bold,
-                                    color = Color(0xFFEF4444)
-                                )
-                            }
-                            Spacer(modifier = Modifier.height(4.dp))
-                            Text(
-                                text = "Allow Mi Explorer to install apps in Android Settings to perform 1-tap installation.",
-                                style = MaterialTheme.typography.bodySmall
-                            )
-                            Spacer(modifier = Modifier.height(8.dp))
-                            Button(
-                                onClick = {
-                                    FileOpener.requestInstallUnknownAppsPermission(context)
-                                },
-                                shape = RoundedCornerShape(10.dp),
-                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFEF4444)),
-                                modifier = Modifier.fillMaxWidth()
-                            ) {
-                                Text("Allow in System Settings", style = MaterialTheme.typography.labelSmall)
-                            }
-                        }
-                    }
-                }
-            }
-
-            // 3. Quick Navigation to APK Cloner & Downgrade Hub
-            item {
-                Surface(
-                    shape = RoundedCornerShape(14.dp),
-                    color = Color(0xFF8B5CF6).copy(alpha = 0.12f),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable { viewModel.openAppManager(ApkTab.INSTALLED_APPS) }
-                ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Icon(Icons.Default.Apps, contentDescription = null, tint = Color(0xFF8B5CF6), modifier = Modifier.size(22.dp))
-                        Spacer(modifier = Modifier.width(10.dp))
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                text = "Need to Extract or Downgrade Installed Apps?",
-                                style = MaterialTheme.typography.titleSmall.copy(fontSize = 13.sp),
-                                fontWeight = FontWeight.Bold,
-                                color = Color(0xFF7C3AED)
-                            )
-                            Text(
-                                text = "Tap here to open App Cloner & Downgrade Archive Hub",
-                                style = MaterialTheme.typography.bodySmall.copy(fontSize = 11.sp),
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                        Icon(Icons.Default.ChevronRight, contentDescription = null, tint = Color(0xFF8B5CF6))
-                    }
-                }
-            }
-
-            // 4. Search Bar
-            item {
-                OutlinedTextField(
-                    value = searchQuery,
-                    onValueChange = { searchQuery = it },
-                    placeholder = { Text("Search APKs by app name, package, or file...") },
-                    leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, tint = MiGreen) },
-                    trailingIcon = {
-                        if (searchQuery.isNotEmpty()) {
-                            IconButton(onClick = { searchQuery = "" }) {
-                                Icon(Icons.Default.Close, contentDescription = "Clear")
-                            }
-                        }
-                    },
-                    singleLine = true,
-                    shape = RoundedCornerShape(16.dp),
-                    modifier = Modifier.fillMaxWidth()
-                )
-            }
-
-            // 5. Filter Chips
-            item {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
-                    InstallerFilterChip("All (${storageApks.size})", filterType == "ALL") { filterType = "ALL" }
-                    InstallerFilterChip("Ready (${storageApks.count { !it.isInstalled }})", filterType == "READY") { filterType = "READY" }
-                    InstallerFilterChip("Updates (${storageApks.count { it.isUpgradeCandidate }})", filterType == "UPDATES") { filterType = "UPDATES" }
-                    InstallerFilterChip("Installed (${storageApks.count { it.isInstalled }})", filterType == "INSTALLED") { filterType = "INSTALLED" }
-                }
-            }
-
-            // 6. Loading or Empty State
-            if (isLoading) {
-                item {
-                    Box(modifier = Modifier.fillMaxWidth().padding(40.dp), contentAlignment = Alignment.Center) {
                         CircularProgressIndicator(color = MiGreen)
                     }
                 }
             } else if (filteredApks.isEmpty()) {
                 item {
-                    Surface(
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(16.dp),
-                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)
+                    Card(
+                        shape = RoundedCornerShape(20.dp),
+                        colors = CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                        ),
+                        modifier = Modifier.fillMaxWidth()
                     ) {
                         Column(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .padding(32.dp),
+                                .padding(36.dp),
                             horizontalAlignment = Alignment.CenterHorizontally
                         ) {
                             Icon(
                                 imageVector = Icons.Default.Android,
                                 contentDescription = null,
                                 tint = MaterialTheme.colorScheme.outline,
-                                modifier = Modifier.size(52.dp)
+                                modifier = Modifier.size(56.dp)
                             )
-                            Spacer(modifier = Modifier.height(12.dp))
+                            Spacer(modifier = Modifier.height(14.dp))
                             Text(
-                                text = if (searchQuery.isNotEmpty()) "No matching APK packages found" else "No APK files found on storage",
+                                text = if (searchQuery.isNotEmpty()) "No matching APK files" else "No APK files found",
                                 style = MaterialTheme.typography.titleMedium,
                                 fontWeight = FontWeight.SemiBold
                             )
-                            Spacer(modifier = Modifier.height(4.dp))
+                            Spacer(modifier = Modifier.height(6.dp))
                             Text(
-                                text = "Use \"Browse & Install APK File\" above to pick any file, or transfer APKs via Mi Fast Share.",
+                                text = "APK installation packages on your device will appear here.",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
-                            Spacer(modifier = Modifier.height(16.dp))
+                            Spacer(modifier = Modifier.height(18.dp))
                             Button(
                                 onClick = {
                                     pickApkLauncher.launch(
@@ -546,82 +249,25 @@ fun AppInstallerScreen(
                 }
             } else {
                 items(filteredApks, key = { it.path }) { apk ->
-                    InstallerApkCard(
+                    SimpleApkCard(
                         apk = apk,
-                        isBatchMode = isBatchMode,
-                        isSelected = apk.path in selectedForBatch,
-                        onToggleSelect = {
-                            selectedForBatch = if (apk.path in selectedForBatch) {
-                                selectedForBatch - apk.path
-                            } else {
-                                selectedForBatch + apk.path
-                            }
-                        },
-                        onInstall = {
-                            val ext = apk.file.extension.lowercase()
-                            if (ext == "xapk" || ext == "apks") {
-                                viewModel.openXapkFile(apk.file)
-                            } else {
-                                autoStartDialogInstall = true
-                                inspectingApk = apk
-                            }
-                        },
-                        onInspect = {
-                            autoStartDialogInstall = false
-                            inspectingApk = apk
-                        },
-                        onShare = {
-                            FileOpener.shareFile(context, FileItem(apk.file))
-                        },
-                        onFastShare = {
-                            viewModel.sendBackupViaFastShare(apk)
-                        },
-                        onDelete = {
-                            apkToDelete = apk
-                        }
+                        onClick = { inspectingApk = apk },
+                        onInstall = { inspectingApk = apk },
+                        onDelete = { apkToDelete = apk }
                     )
                 }
             }
         }
     }
 
-    // Inspect / Full Permissions & 1-Tap Installer Dialog
+    // Clean, minimalist Popup Installer
     inspectingApk?.let { apk ->
         ApkInstallDialog(
             apk = apk,
-            autoStartInstall = autoStartDialogInstall,
             onDismiss = {
                 inspectingApk = null
-                autoStartDialogInstall = false
                 viewModel.loadStorageApks()
-            },
-            onInstall = {
-                val ext = apk.file.extension.lowercase()
-                if (ext == "xapk" || ext == "apks") {
-                    inspectingApk = null
-                    autoStartDialogInstall = false
-                    viewModel.openXapkFile(apk.file)
-                } else {
-                    FileOpener.installApk(context, apk.file)
-                }
-            },
-            onShare = {
-                FileOpener.shareFile(context, FileItem(apk.file))
-            },
-            onFastShare = {
-                viewModel.sendBackupViaFastShare(apk)
-            },
-            onChecksum = {
-                checksumTarget = FileItem(apk.file)
             }
-        )
-    }
-
-    // Checksum Dialog
-    checksumTarget?.let { target ->
-        ChecksumDialog(
-            item = target,
-            onDismiss = { checksumTarget = null }
         )
     }
 
@@ -630,14 +276,15 @@ fun AppInstallerScreen(
         AlertDialog(
             onDismissRequest = { apkToDelete = null },
             title = { Text("Delete APK File?") },
-            text = { Text("Are you sure you want to delete \"${apk.name}\"? This will remove the installation file from storage.") },
+            text = { Text("Delete \"${apk.name}\"? This will remove the installer file from storage.") },
             confirmButton = {
                 Button(
                     onClick = {
                         viewModel.deleteStorageApk(apk)
                         apkToDelete = null
                     },
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFEF4444))
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFEF4444)),
+                    shape = RoundedCornerShape(10.dp)
                 ) {
                     Text("Delete")
                 }
@@ -651,256 +298,122 @@ fun AppInstallerScreen(
     }
 }
 
+/**
+ * Clean, lightweight card for each APK file.
+ */
 @Composable
-private fun InstallerApkCard(
+private fun SimpleApkCard(
     apk: ApkFileItem,
-    isBatchMode: Boolean,
-    isSelected: Boolean,
-    onToggleSelect: () -> Unit,
+    onClick: () -> Unit,
     onInstall: () -> Unit,
-    onInspect: () -> Unit,
-    onShare: () -> Unit,
-    onFastShare: () -> Unit,
     onDelete: () -> Unit
 ) {
-    val isBundle = remember(apk.file.name) {
-        val ext = apk.file.extension.lowercase()
-        ext == "xapk" || ext == "apks"
-    }
-
     Card(
-        shape = RoundedCornerShape(18.dp),
+        shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
         modifier = Modifier
             .fillMaxWidth()
-            .clickable {
-                if (isBatchMode) onToggleSelect() else onInspect()
-            }
+            .clickable(onClick = onClick)
     ) {
-        Column(modifier = Modifier.padding(16.dp)) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 14.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            // Icon
+            Box(
+                modifier = Modifier
+                    .size(48.dp)
+                    .clip(RoundedCornerShape(14.dp))
+                    .background(MiGreen.copy(alpha = 0.12f)),
+                contentAlignment = Alignment.Center
             ) {
-                if (isBatchMode) {
-                    Checkbox(
-                        checked = isSelected,
-                        onCheckedChange = { onToggleSelect() }
-                    )
-                    Spacer(modifier = Modifier.width(6.dp))
+                val bitmap = remember(apk.icon) {
+                    try { apk.icon?.toBitmap(width = 96, height = 96)?.asImageBitmap() } catch (e: Exception) { null }
                 }
-
-                // App Icon
-                Box(
-                    modifier = Modifier
-                        .size(50.dp)
-                        .clip(RoundedCornerShape(14.dp))
-                        .background(MiGreen.copy(alpha = 0.12f)),
-                    contentAlignment = Alignment.Center
-                ) {
-                    val bitmap = remember(apk.icon) {
-                        try { apk.icon?.toBitmap(width = 100, height = 100)?.asImageBitmap() } catch (e: Exception) { null }
-                    }
-                    if (bitmap != null) {
-                        Image(
-                            bitmap = bitmap,
-                            contentDescription = apk.appName,
-                            modifier = Modifier.size(44.dp).clip(RoundedCornerShape(12.dp))
-                        )
-                    } else {
-                        Icon(
-                            imageVector = if (isBundle) Icons.Default.Layers else Icons.Default.Android,
-                            contentDescription = null,
-                            tint = MiGreen,
-                            modifier = Modifier.size(28.dp)
-                        )
-                    }
-                }
-
-                Spacer(modifier = Modifier.width(12.dp))
-
-                Column(modifier = Modifier.weight(1f)) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(
-                            text = apk.appName,
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier.weight(1f, fill = false)
-                        )
-                        Spacer(modifier = Modifier.width(6.dp))
-
-                        // Status Badge
-                        when {
-                            apk.isUpgradeCandidate -> {
-                                StatusTag("UPDATE", MiBlue)
-                            }
-                            apk.isDowngradeCandidate -> {
-                                StatusTag("DOWNGRADE", MiOrange)
-                            }
-                            apk.isInstalled -> {
-                                StatusTag("INSTALLED", MaterialTheme.colorScheme.outline)
-                            }
-                            isBundle -> {
-                                StatusTag("SPLIT BUNDLE", MiOrange)
-                            }
-                            else -> {
-                                StatusTag("NEW APP", MiGreen)
-                            }
-                        }
-                    }
-
-                    Spacer(modifier = Modifier.height(2.dp))
-
-                    Text(
-                        text = "v${apk.versionName} • ${apk.packageName}",
-                        style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace, fontSize = 11.sp),
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
+                if (bitmap != null) {
+                    Image(
+                        bitmap = bitmap,
+                        contentDescription = apk.appName,
+                        modifier = Modifier
+                            .size(42.dp)
+                            .clip(RoundedCornerShape(12.dp))
                     )
-
-                    Spacer(modifier = Modifier.height(2.dp))
-
-                    Text(
-                        text = "${apk.formattedSize} • ${apk.targetSdkLabel} • ${apk.supportedAbis.firstOrNull() ?: "Universal"}",
-                        style = MaterialTheme.typography.bodySmall.copy(fontSize = 11.sp),
-                        color = MaterialTheme.colorScheme.outline,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
+                } else {
+                    Icon(
+                        imageVector = Icons.Default.Android,
+                        contentDescription = null,
+                        tint = MiGreen,
+                        modifier = Modifier.size(28.dp)
                     )
                 }
             }
 
-            Spacer(modifier = Modifier.height(12.dp))
+            Spacer(modifier = Modifier.width(14.dp))
 
-            // Action Buttons Row
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                // Primary 1-Tap Install Button
-                Button(
-                    onClick = onInstall,
-                    shape = RoundedCornerShape(10.dp),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = when {
-                            apk.isDowngradeCandidate -> MiOrange
-                            apk.isUpgradeCandidate -> MiBlue
-                            apk.isInstalled -> Color(0xFF059669)
-                            else -> MiGreen
-                        }
-                    ),
-                    modifier = Modifier.weight(1.3f).height(38.dp),
-                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 0.dp)
+            // File Details
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = apk.appName,
+                    style = MaterialTheme.typography.titleMedium.copy(fontSize = 15.sp),
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Spacer(modifier = Modifier.height(2.dp))
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
-                    Icon(
-                        imageVector = if (apk.isInstalled) Icons.Default.Update else Icons.Default.Download,
-                        contentDescription = null,
-                        modifier = Modifier.size(16.dp)
-                    )
-                    Spacer(modifier = Modifier.width(6.dp))
                     Text(
-                        text = when {
-                            apk.isDowngradeCandidate -> "Downgrade"
-                            apk.isUpgradeCandidate -> "Update"
-                            apk.isInstalled -> "Reinstall"
-                            isBundle -> "Install Splits"
-                            else -> "Install App"
-                        },
-                        style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold)
+                        text = apk.formattedSize,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Text(
+                        text = "•",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.outline.copy(alpha = 0.5f)
+                    )
+                    Text(
+                        text = apk.formattedDate,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
+            }
 
-                // Details / Audit Button
-                OutlinedButton(
-                    onClick = onInspect,
-                    shape = RoundedCornerShape(10.dp),
-                    modifier = Modifier.weight(1f).height(38.dp),
-                    contentPadding = PaddingValues(horizontal = 6.dp, vertical = 0.dp)
-                ) {
-                    Icon(Icons.Default.Info, contentDescription = null, modifier = Modifier.size(16.dp))
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text("Audit", style = MaterialTheme.typography.labelSmall)
-                }
+            Spacer(modifier = Modifier.width(8.dp))
 
-                // Fast Share
-                IconButton(onClick = onFastShare, modifier = Modifier.size(38.dp)) {
-                    Icon(Icons.Default.WifiTethering, contentDescription = "Fast Share", tint = Color(0xFF10B981), modifier = Modifier.size(20.dp))
-                }
-
-                // Share
-                IconButton(onClick = onShare, modifier = Modifier.size(38.dp)) {
-                    Icon(Icons.Default.Share, contentDescription = "Share", tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(18.dp))
-                }
-
-                // Delete
-                IconButton(onClick = onDelete, modifier = Modifier.size(38.dp)) {
-                    Icon(Icons.Default.DeleteOutline, contentDescription = "Delete", tint = Color(0xFFEF4444), modifier = Modifier.size(18.dp))
-                }
+            // Quick Install Button
+            Button(
+                onClick = onInstall,
+                shape = RoundedCornerShape(12.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = MiGreen),
+                contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp)
+            ) {
+                Text("Install", style = MaterialTheme.typography.labelMedium)
             }
         }
     }
 }
 
-@Composable
-private fun StatusTag(label: String, color: Color) {
-    Surface(
-        shape = RoundedCornerShape(6.dp),
-        color = color.copy(alpha = 0.15f)
-    ) {
-        Text(
-            text = label,
-            color = color,
-            style = MaterialTheme.typography.labelSmall.copy(fontSize = 9.sp, fontWeight = FontWeight.Bold),
-            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-        )
-    }
-}
-
-@Composable
-private fun InstallerFilterChip(
-    label: String,
-    isSelected: Boolean,
-    onClick: () -> Unit
-) {
-    Surface(
-        shape = RoundedCornerShape(12.dp),
-        color = if (isSelected) MiGreen else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
-        modifier = Modifier.clickable(onClick = onClick)
-    ) {
-        Text(
-            text = label,
-            color = if (isSelected) Color.White else MaterialTheme.colorScheme.onSurfaceVariant,
-            style = MaterialTheme.typography.labelSmall.copy(
-                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
-                fontSize = 11.sp
-            ),
-            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
-        )
-    }
-}
-
-private fun getFileNameFromUri(context: Context, uri: Uri): String {
-    var name = "package.apk"
+private fun getFileNameFromUri(context: android.content.Context, uri: Uri): String {
+    var name = "app.apk"
     if (uri.scheme == "content") {
-        try {
-            context.contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { cursor ->
-                if (cursor.moveToFirst()) {
-                    val idx = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
-                    if (idx != -1) {
-                        name = cursor.getString(idx)
-                    }
+        context.contentResolver.query(uri, null, null, null, null)?.use { cursor ->
+            if (cursor.moveToFirst()) {
+                val idx = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+                if (idx != -1) {
+                    name = cursor.getString(idx)
                 }
             }
-        } catch (e: Exception) {
-            // ignore
         }
     } else if (uri.path != null) {
-        name = File(uri.path!!).name
+        val f = File(uri.path!!)
+        name = f.name
     }
     return name
 }
