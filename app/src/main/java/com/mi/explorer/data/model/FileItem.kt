@@ -70,7 +70,7 @@ data class FileItem(
     val category: FileCategory
         get() = when {
             isDirectory -> FileCategory.FOLDER
-            extension in listOf("jpg", "jpeg", "png", "gif", "webp", "bmp", "heic") -> FileCategory.IMAGE
+            extension in listOf("jpg", "jpeg", "png", "gif", "webp", "bmp", "heic", "heif", "dng", "svg", "raw") -> FileCategory.IMAGE
             extension in listOf("mp3", "wav", "ogg", "m4a", "flac", "aac", "wma", "opus", "amr", "m4b", "mid", "midi") -> FileCategory.AUDIO
             extension in listOf("mp4", "mkv", "webm", "avi", "mov", "3gp", "flv", "wmv", "m4v", "ts", "mpg", "mpeg") -> FileCategory.VIDEO
             extension in listOf("pdf", "doc", "docx", "xls", "xlsx", "ppt", "pptx", "txt", "epub") -> FileCategory.DOCUMENT

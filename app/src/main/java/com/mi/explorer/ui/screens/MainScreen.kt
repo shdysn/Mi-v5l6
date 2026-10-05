@@ -1191,7 +1191,7 @@ fun RecentTabContent(
         filteredList.groupBy { it.timeGroup }
     }
 
-    var recentViewMode by remember { mutableStateOf(ViewMode.LIST) }
+    var recentViewMode by remember { mutableStateOf(ViewMode.GRID) }
 
     LazyColumn(
         modifier = Modifier
@@ -1299,14 +1299,14 @@ fun RecentTabContent(
                 }
 
                 if (recentViewMode == ViewMode.GRID) {
-                    val gridColumns = 3
+                    val gridColumns = 4
                     val chunked = files.chunked(gridColumns)
                     items(chunked, key = { row -> "recent_grid_${row.first().path}" }) { rowItems ->
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .padding(horizontal = 12.dp, vertical = 4.dp),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                .padding(horizontal = 8.dp, vertical = 4.dp),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
                         ) {
                             rowItems.forEach { file ->
                                 val isSelected = selectedItems.contains(file)
@@ -1471,103 +1471,31 @@ fun StorageTabContent(
                     modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
                 )
             }
-
-            // Favorites & Pinned Folders Bar
-            if (favorites.isNotEmpty()) {
-                item {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(top = 8.dp, bottom = 4.dp)
-                    ) {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 16.dp, vertical = 4.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Star,
-                                contentDescription = null,
-                                tint = Color(0xFFF59E0B),
-                                modifier = Modifier.size(16.dp)
-                            )
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text(
-                                text = "Favorites & Quick Access",
-                                style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Bold),
-                                color = MaterialTheme.colorScheme.onSurface
-                            )
-                        }
-
-                        LazyRow(
-                            modifier = Modifier.fillMaxWidth(),
-                            contentPadding = PaddingValues(horizontal = 16.dp),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            items(favorites, key = { it.path }) { fav ->
-                                val favIcon = if (fav.isDirectory) Icons.Default.Folder else Icons.Default.InsertDriveFile
-                                val favColor = if (fav.isDirectory) Color(0xFFFFB300) else Color(0xFF2563EB)
-                                Surface(
-                                    modifier = Modifier
-                                        .clip(RoundedCornerShape(12.dp))
-                                        .clickable { onNavigateTo(fav.file) },
-                                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
-                                    tonalElevation = 1.dp
-                                ) {
-                                    Row(
-                                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-                                        verticalAlignment = Alignment.CenterVertically
-                                    ) {
-                                        Icon(
-                                            imageVector = favIcon,
-                                            contentDescription = null,
-                                            tint = favColor,
-                                            modifier = Modifier.size(18.dp)
-                                        )
-                                        Spacer(modifier = Modifier.width(6.dp))
-                                        Text(
-                                            text = fav.name,
-                                            style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Medium),
-                                            maxLines = 1
-                                        )
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-
-            item {
-                HorizontalDivider(
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)
-                )
-            }
         }
 
-        // Section header for Files & Folders
+        // Section header for folder actions / filter chips
         item {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 6.dp),
+                    .padding(horizontal = 16.dp, vertical = 4.dp),
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
+                horizontalArrangement = if (!isRoot) Arrangement.SpaceBetween else Arrangement.End
             ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(
-                        text = if (isRoot) "Files & Folders" else storageState.currentDir.name,
-                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text(
-                        text = "(${storageState.displayItems.size})",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+                if (!isRoot) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            text = storageState.currentDir.name,
+                            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = "(${storageState.displayItems.size})",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
                 }
 
                 Row(
@@ -1803,14 +1731,14 @@ fun StorageTabContent(
                 }
             }
         } else if (storageState.viewMode == ViewMode.GRID) {
-            val gridColumns = 3
+            val gridColumns = 4
             val chunked = storageState.displayItems.chunked(gridColumns)
             items(chunked, key = { row -> "storage_grid_${row.first().path}" }) { rowItems ->
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 12.dp, vertical = 4.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        .padding(horizontal = 8.dp, vertical = 4.dp),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
                     rowItems.forEach { item ->
                         val isSelected = storageState.selectedItems.contains(item)

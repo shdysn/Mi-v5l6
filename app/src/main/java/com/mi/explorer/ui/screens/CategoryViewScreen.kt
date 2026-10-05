@@ -63,7 +63,7 @@ fun CategoryViewScreen(
     var foldersOnTop by remember { mutableStateOf(false) }
     var showHidden by remember { mutableStateOf(false) }
     var filterOnlyBigFiles by remember { mutableStateOf(false) }
-    var viewMode by remember { mutableStateOf(ViewMode.LIST) }
+    var viewMode by remember { mutableStateOf(ViewMode.GRID) }
 
     val sortedItems = remember(state.items, categorySortType, foldersOnTop, showHidden, filterOnlyBigFiles) {
         val filtered = state.items.filter { item ->
@@ -198,17 +198,17 @@ fun CategoryViewScreen(
                     }
                 }
             } else if (viewMode == ViewMode.GRID) {
-                val gridColumns = 3
+                val gridColumns = 4
                 val chunked = sortedItems.chunked(gridColumns)
                 LazyColumn(
                     modifier = Modifier.fillMaxSize(),
-                    contentPadding = PaddingValues(12.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                    contentPadding = PaddingValues(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
                     items(chunked, key = { row -> "cat_grid_${row.first().path}" }) { rowItems ->
                         Row(
                             modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
                         ) {
                             rowItems.forEach { item ->
                                 val itemTagIds = fileTagsMap[item.path] ?: emptyList()

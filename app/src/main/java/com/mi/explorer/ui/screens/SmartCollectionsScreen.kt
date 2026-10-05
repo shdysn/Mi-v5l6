@@ -45,7 +45,7 @@ fun SmartCollectionsScreen(
     val isLoading by viewModel.isCollectionLoading.collectAsStateWithLifecycle()
 
     var showCreateDialog by remember { mutableStateOf(false) }
-    var viewMode by remember { mutableStateOf(ViewMode.LIST) }
+    var viewMode by remember { mutableStateOf(ViewMode.GRID) }
 
     Scaffold(
         modifier = modifier.testTag("smart_collections_screen"),
@@ -119,15 +119,15 @@ fun SmartCollectionsScreen(
                         }
                     }
                 } else if (viewMode == ViewMode.GRID) {
-                    val gridColumns = 3
+                    val gridColumns = 4
                     val chunked = detail.items.chunked(gridColumns)
                     LazyColumn(
                         modifier = Modifier.fillMaxSize(),
-                        contentPadding = PaddingValues(12.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                        contentPadding = PaddingValues(8.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
                         items(chunked, key = { row -> "coll_grid_${row.first().path}" }) { rowItems ->
-                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                                 rowItems.forEach { item ->
                                     Box(modifier = Modifier.weight(1f)) {
                                         MiFileGridItem(

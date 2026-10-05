@@ -95,7 +95,7 @@ data class StorageTabState(
     val forwardStack: List<File> = emptyList(),
     val items: List<FileItem> = emptyList(),
     val selectedItems: Set<FileItem> = emptySet(),
-    val viewMode: ViewMode = ViewMode.LIST,
+    val viewMode: ViewMode = ViewMode.GRID,
     val sortType: SortType = SortType.NAME_ASC,
     val foldersOnTop: Boolean = true,
     val searchQuery: String = "",
