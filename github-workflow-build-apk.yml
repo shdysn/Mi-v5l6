@@ -1,4 +1,4 @@
-name: Build Android APK
+name: Build and Release Android App
 
 on:
   push:
@@ -19,15 +19,10 @@ permissions:
 
 jobs:
   build:
-    name: Build APK
+    name: Build Release APK and AAB
     runs-on: ubuntu-latest
     permissions:
       contents: write
-      actions: write
-      checks: write
-      packages: write
-      pull-requests: write
-      statuses: write
 
     steps:
       - name: Checkout Code
@@ -59,27 +54,32 @@ jobs:
             keytool -genkeypair -v -keystore debug.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US"
           fi
 
-      - name: Build Debug APK
-        run: ./gradlew assembleDebug --stacktrace --no-daemon
+      - name: Build Release APK and AAB Bundle
+        run: |
+          ./gradlew assembleRelease bundleRelease --stacktrace --no-daemon
 
-      - name: Rename APK for Clarity
+      - name: Collect Release Binaries
         run: |
           mkdir -p build-artifacts
-          cp app/build/outputs/apk/debug/app-debug.apk build-artifacts/MiExplorer-v1.0.0.apk
+          cp app/build/outputs/apk/release/app-release.apk build-artifacts/MiExplorer-v1.0.0-release.apk
+          cp app/build/outputs/bundle/release/app-release.aab build-artifacts/MiExplorer-v1.0.0-release.aab
 
-      - name: Upload APK Artifact
+      - name: Upload Artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: MiExplorer-APK
-          path: build-artifacts/MiExplorer-v1.0.0.apk
+          name: MiExplorer-Production-Artifacts
+          path: build-artifacts/*
           retention-days: 30
 
-      - name: Create GitHub Release (On Tag)
-        if: startsWith(github.ref, 'refs/tags/v')
+      - name: Create or Update GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v') || github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
         uses: softprops/action-gh-release@v2
         with:
-          files: build-artifacts/MiExplorer-v1.0.0.apk
-          name: Mi Explorer ${{ github.ref_name }}
+          tag_name: ${{ github.ref_name }}
+          name: Mi Explorer Release ${{ github.ref_name }}
           draft: false
           prerelease: false
           generate_release_notes: true
+          files: |
+            build-artifacts/MiExplorer-v1.0.0-release.apk
+            build-artifacts/MiExplorer-v1.0.0-release.aab
