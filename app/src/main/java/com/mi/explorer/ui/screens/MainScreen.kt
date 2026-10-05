@@ -1165,6 +1165,7 @@ fun StorageTabContent(
 
     val isRoot = storageState.currentDir == rootStorageDir
     var showToolsSheet by remember { mutableStateOf(false) }
+    var isUtilitiesMenuExpanded by remember { mutableStateOf(false) }
 
     LazyColumn(
         modifier = Modifier
@@ -1196,8 +1197,37 @@ fun StorageTabContent(
                 )
             }
 
-            // 3. Signature MIUI Utilities Carousel (Horizontal, spacious, NO text truncation)
+            // 3. Signature MIUI Utilities Carousel (4 visible, rest in dropdown menu)
             item {
+                val utilitiesList = remember(
+                    onPinWidgetClick, onAppInstallerClick, onStatusSaverClick,
+                    onWebShareClick, onSmartCollectionsClick, onTimeMachineClick,
+                    onFileShredderClick, onVaultClick, onFastShareClick,
+                    onAppManagerClick, onNetworkDrivesClick, onTrashClick,
+                    onAnalyzerClick, onDuplicatesClick, onFtpClick
+                ) {
+                    listOf(
+                        Triple("Home Widget", "Pin Storage Card", Icons.Default.Widgets to Color(0xFF0EA5E9)) to onPinWidgetClick,
+                        Triple("APKs", "Install APK files", Icons.Default.InstallMobile to Color(0xFF059669)) to onAppInstallerClick,
+                        Triple("Status Saver", "WhatsApp Status", Icons.Default.BookmarkAdded to Color(0xFF10B981)) to onStatusSaverClick,
+                        Triple("PC Web Portal", "Send & Receive", Icons.Default.Language to Color(0xFF2563EB)) to onWebShareClick,
+                        Triple("Smart Hubs", "Auto Collections", Icons.Default.AutoAwesomeMosaic to Color(0xFF8B5CF6)) to onSmartCollectionsClick,
+                        Triple("Time Machine", "On This Day", Icons.Default.History to Color(0xFFF59E0B)) to onTimeMachineClick,
+                        Triple("File Shredder", "DoD 3-Pass Wipe", Icons.Default.EnhancedEncryption to Color(0xFFEF4444)) to onFileShredderClick,
+                        Triple("Private Vault", "Fingerprint safe", Icons.Default.Lock to MiOrange) to onVaultClick,
+                        Triple("Mi Fast Share", "Direct Wi-Fi", Icons.Default.WifiTethering to Color(0xFF10B981)) to onFastShareClick,
+                        Triple("APK Cloner & Hub", "Backup & Rollback", Icons.Default.Android to Color(0xFF8B5CF6)) to onAppManagerClick,
+                        Triple("Cloud Drives", "SMB / WebDAV", Icons.Default.CloudQueue to Color(0xFF0EA5E9)) to onNetworkDrivesClick,
+                        Triple("Recycle Bin", "30d auto-purge", Icons.Default.DeleteOutline to Color(0xFFEF4444)) to onTrashClick,
+                        Triple("Analyzer", "Storage map", Icons.Default.PieChart to Color(0xFF3B82F6)) to onAnalyzerClick,
+                        Triple("Duplicates", "Clean redundant", Icons.Default.ContentCopy to Color(0xFF14B8A6)) to onDuplicatesClick,
+                        Triple("Transfer to PC", "FTP server", Icons.Default.Wifi to Color(0xFF6366F1)) to onFtpClick
+                    )
+                }
+
+                val visibleUtilities = remember(utilitiesList) { utilitiesList.take(4) }
+                val dropdownUtilities = remember(utilitiesList) { utilitiesList.drop(4) }
+
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -1215,58 +1245,122 @@ fun StorageTabContent(
                             style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
                             color = MaterialTheme.colorScheme.onSurface
                         )
-                        TextButton(
-                            onClick = { showToolsSheet = true },
-                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)
-                        ) {
-                            Text("View All", color = MiOrange, style = MaterialTheme.typography.labelMedium)
-                            Icon(
-                                imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
-                                contentDescription = null,
-                                tint = MiOrange,
-                                modifier = Modifier.size(16.dp)
-                            )
+
+                        // More ▼ Dropdown Button (matching Screenshot 2 from MIUI)
+                        Box {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .clickable { isUtilitiesMenuExpanded = true }
+                                    .padding(horizontal = 8.dp, vertical = 4.dp)
+                            ) {
+                                Text(
+                                    text = "More",
+                                    style = MaterialTheme.typography.bodyMedium.copy(
+                                        fontWeight = FontWeight.Medium,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                )
+                                Spacer(modifier = Modifier.width(2.dp))
+                                Icon(
+                                    imageVector = Icons.Default.ArrowDropDown,
+                                    contentDescription = "More utilities",
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
+
+                            DropdownMenu(
+                                expanded = isUtilitiesMenuExpanded,
+                                onDismissRequest = { isUtilitiesMenuExpanded = false },
+                                modifier = Modifier.widthIn(min = 230.dp, max = 290.dp)
+                            ) {
+                                dropdownUtilities.forEach { (meta, onClick) ->
+                                    DropdownMenuItem(
+                                        text = {
+                                            Column {
+                                                Text(
+                                                    text = meta.first,
+                                                    style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold)
+                                                )
+                                                Text(
+                                                    text = meta.second,
+                                                    style = MaterialTheme.typography.bodySmall,
+                                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                                )
+                                            }
+                                        },
+                                        leadingIcon = {
+                                            Box(
+                                                modifier = Modifier
+                                                    .size(32.dp)
+                                                    .clip(RoundedCornerShape(8.dp))
+                                                    .background(meta.third.second.copy(alpha = 0.15f)),
+                                                contentAlignment = Alignment.Center
+                                            ) {
+                                                Icon(
+                                                    imageVector = meta.third.first,
+                                                    contentDescription = null,
+                                                    tint = meta.third.second,
+                                                    modifier = Modifier.size(18.dp)
+                                                )
+                                            }
+                                        },
+                                        onClick = {
+                                            isUtilitiesMenuExpanded = false
+                                            onClick()
+                                        }
+                                    )
+                                }
+                            }
                         }
                     }
 
-                    val utilitiesList = remember(
-                        onPinWidgetClick, onAppInstallerClick, onStatusSaverClick,
-                        onWebShareClick, onSmartCollectionsClick, onTimeMachineClick,
-                        onFileShredderClick, onVaultClick, onFastShareClick,
-                        onAppManagerClick, onNetworkDrivesClick, onTrashClick,
-                        onAnalyzerClick, onDuplicatesClick, onFtpClick
-                    ) {
-                        listOf(
-                            Triple("Home Widget", "Pin Storage Card", Icons.Default.Widgets to Color(0xFF0EA5E9)) to onPinWidgetClick,
-                            Triple("APKs", "Install APK files", Icons.Default.InstallMobile to Color(0xFF059669)) to onAppInstallerClick,
-                            Triple("Status Saver", "WhatsApp Status", Icons.Default.BookmarkAdded to Color(0xFF10B981)) to onStatusSaverClick,
-                            Triple("PC Web Portal", "Send & Receive", Icons.Default.Language to Color(0xFF2563EB)) to onWebShareClick,
-                            Triple("Smart Hubs", "Auto Collections", Icons.Default.AutoAwesomeMosaic to Color(0xFF8B5CF6)) to onSmartCollectionsClick,
-                            Triple("Time Machine", "On This Day", Icons.Default.History to Color(0xFFF59E0B)) to onTimeMachineClick,
-                            Triple("File Shredder", "DoD 3-Pass Wipe", Icons.Default.EnhancedEncryption to Color(0xFFEF4444)) to onFileShredderClick,
-                            Triple("Private Vault", "Fingerprint safe", Icons.Default.Lock to MiOrange) to onVaultClick,
-                            Triple("Mi Fast Share", "Direct Wi-Fi", Icons.Default.WifiTethering to Color(0xFF10B981)) to onFastShareClick,
-                            Triple("APK Cloner & Hub", "Backup & Rollback", Icons.Default.Android to Color(0xFF8B5CF6)) to onAppManagerClick,
-                            Triple("Cloud Drives", "SMB / WebDAV", Icons.Default.CloudQueue to Color(0xFF0EA5E9)) to onNetworkDrivesClick,
-                            Triple("Recycle Bin", "30d auto-purge", Icons.Default.DeleteOutline to Color(0xFFEF4444)) to onTrashClick,
-                            Triple("Analyzer", "Storage map", Icons.Default.PieChart to Color(0xFF3B82F6)) to onAnalyzerClick,
-                            Triple("Duplicates", "Clean redundant", Icons.Default.ContentCopy to Color(0xFF14B8A6)) to onDuplicatesClick,
-                            Triple("Transfer to PC", "FTP server", Icons.Default.Wifi to Color(0xFF6366F1)) to onFtpClick
-                        )
-                    }
-
+                    // 4 Visible Utilities on Screen
                     LazyRow(
                         modifier = Modifier.fillMaxWidth(),
                         contentPadding = PaddingValues(horizontal = 16.dp),
                         horizontalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
-                        items(utilitiesList, key = { it.first.first }) { (meta, onClick) ->
+                        items(visibleUtilities, key = { it.first.first }) { (meta, onClick) ->
                             UtilityCard(
                                 title = meta.first,
                                 subtitle = meta.second,
                                 icon = meta.third.first,
                                 color = meta.third.second,
                                 onClick = onClick
+                            )
+                        }
+                    }
+
+                    // Centered "More ▼" button below the 4 items (exact match with Screenshot 2)
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = 8.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(12.dp))
+                                .clickable { isUtilitiesMenuExpanded = true }
+                                .padding(horizontal = 16.dp, vertical = 6.dp)
+                        ) {
+                            Text(
+                                text = "More",
+                                style = MaterialTheme.typography.bodyMedium.copy(
+                                    fontWeight = FontWeight.Medium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            )
+                            Spacer(modifier = Modifier.width(3.dp))
+                            Icon(
+                                imageVector = Icons.Default.ArrowDropDown,
+                                contentDescription = "More",
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.size(20.dp)
                             )
                         }
                     }
