@@ -44,8 +44,8 @@ class FileRepository(private val context: Context) {
         var cachedRecentItems: List<FileItem>? = null
     }
 
-    val rootStorageDirectory: File
-        get() = try {
+    val rootStorageDirectory: File by lazy {
+        try {
             val ext = Environment.getExternalStorageDirectory()
             if (ext.exists() && ext.canRead()) {
                 ext
@@ -56,117 +56,52 @@ class FileRepository(private val context: Context) {
         } catch (e: Exception) {
             context.filesDir
         }
+    }
 
     fun getFastInitialRootItems(): List<FileItem> {
         cachedRootItems?.let { if (it.isNotEmpty()) return it }
         val root = rootStorageDirectory
-        val list = ArrayList<FileItem>()
-        val seenNames = HashSet<String>()
-
-        try {
-            val files = root.listFiles()
-            if (files != null && files.isNotEmpty()) {
-                for (file in files) {
-                    val name = file.name
-                    if (name.startsWith(".")) continue
-                    val isDir = file.isDirectory
-                    val dotIdx = name.lastIndexOf('.')
-                    val ext = if (!isDir && dotIdx > 0) name.substring(dotIdx + 1).lowercase(java.util.Locale.ROOT) else ""
-                    seenNames.add(name.lowercase(java.util.Locale.ROOT))
-                    list.add(
-                        FileItem(
-                            file = file,
-                            name = name,
-                            path = file.absolutePath,
-                            isDirectory = isDir,
-                            size = if (isDir) 0L else file.length(),
-                            lastModified = file.lastModified(),
-                            isHidden = false,
-                            extension = ext,
-                            itemCount = 0
-                        )
-                    )
-                }
-            }
-        } catch (e: Exception) {
-            // ignore
+        val defaultFolderNames = listOf("Download", "DCIM", "Documents", "Pictures", "Music", "Movies", "Android")
+        val now = System.currentTimeMillis()
+        return defaultFolderNames.map { fName ->
+            val virtualFolder = File(root, fName)
+            FileItem(
+                file = virtualFolder,
+                name = fName,
+                path = virtualFolder.absolutePath,
+                isDirectory = true,
+                size = 0L,
+                lastModified = now,
+                isHidden = false,
+                extension = "",
+                itemCount = 0
+            )
         }
-
-        // If root listing is empty (e.g. storage permissions pending on cold start),
-        // provide instant default standard Android storage folders and sample files so the UI is NEVER empty!
-        if (list.isEmpty()) {
-            ensureMiExplorerSampleData()
-            val sampleBase = File(context.filesDir, "MiExplorer")
-            val sampleFiles = sampleBase.listFiles()
-            if (sampleFiles != null && sampleFiles.isNotEmpty()) {
-                for (file in sampleFiles) {
-                    val name = file.name
-                    if (name.startsWith(".")) continue
-                    val isDir = file.isDirectory
-                    val dotIdx = name.lastIndexOf('.')
-                    val ext = if (!isDir && dotIdx > 0) name.substring(dotIdx + 1).lowercase(java.util.Locale.ROOT) else ""
-                    seenNames.add(name.lowercase(java.util.Locale.ROOT))
-                    list.add(
-                        FileItem(
-                            file = file,
-                            name = name,
-                            path = file.absolutePath,
-                            isDirectory = isDir,
-                            size = if (isDir) 0L else file.length(),
-                            lastModified = file.lastModified(),
-                            isHidden = false,
-                            extension = ext,
-                            itemCount = 0
-                        )
-                    )
-                }
-            }
-
-            val defaultFolderNames = listOf("Download", "DCIM", "Documents", "Pictures", "Music", "Movies", "Android")
-            for (fName in defaultFolderNames) {
-                if (seenNames.add(fName.lowercase(java.util.Locale.ROOT))) {
-                    val virtualFolder = File(root, fName)
-                    list.add(
-                        FileItem(
-                            file = virtualFolder,
-                            name = fName,
-                            path = virtualFolder.absolutePath,
-                            isDirectory = true,
-                            size = 0L,
-                            lastModified = System.currentTimeMillis(),
-                            isHidden = false,
-                            extension = "",
-                            itemCount = 0
-                        )
-                    )
-                }
-            }
-        }
-
-        val sorted = com.mi.explorer.data.model.sortFileList(list, SortType.NAME_ASC, foldersOnTop = true)
-        cachedRootItems = sorted
-        return sorted
     }
 
-    val downloadsDirectory: File
-        get() = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS).let {
+    val downloadsDirectory: File by lazy {
+        Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS).let {
             if (it.exists()) it else File(rootStorageDirectory, "Download")
         }
+    }
 
-    val documentsDirectory: File
-        get() = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOCUMENTS).let {
+    val documentsDirectory: File by lazy {
+        Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOCUMENTS).let {
             if (it.exists()) it else File(rootStorageDirectory, "Documents")
         }
+    }
 
-    val picturesDirectory: File
-        get() = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES).let {
+    val picturesDirectory: File by lazy {
+        Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES).let {
             if (it.exists()) it else File(rootStorageDirectory, "Pictures")
         }
+    }
 
-    val dcimDirectory: File
-        get() = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DCIM).let {
+    val dcimDirectory: File by lazy {
+        Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DCIM).let {
             if (it.exists()) it else File(rootStorageDirectory, "DCIM")
         }
+    }
 
     suspend fun getStorageVolumes(): List<StorageVolumeItem> = withContext(Dispatchers.IO) {
         val list = mutableListOf<StorageVolumeItem>()
@@ -236,18 +171,16 @@ class FileRepository(private val context: Context) {
         return null
     }
 
-    val musicDirectory: File
-        get() = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MUSIC).let {
+    val musicDirectory: File by lazy {
+        Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MUSIC).let {
             if (it.exists()) it else File(rootStorageDirectory, "Music")
         }
+    }
 
-    val moviesDirectory: File
-        get() = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MOVIES).let {
+    val moviesDirectory: File by lazy {
+        Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MOVIES).let {
             if (it.exists()) it else File(rootStorageDirectory, "Movies")
         }
-
-    init {
-        ensureMiExplorerSampleData()
     }
 
     private fun ensureMiExplorerSampleData() {

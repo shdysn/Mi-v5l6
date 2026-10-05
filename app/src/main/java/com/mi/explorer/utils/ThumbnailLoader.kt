@@ -215,6 +215,7 @@ object ThumbnailLoader {
 
         return produceState<Bitmap?>(initialValue = initial, key1 = cacheKey) {
             if (value == null && (category == FileCategory.IMAGE || category == FileCategory.VIDEO || category == FileCategory.APK)) {
+                kotlinx.coroutines.delay(100) // Yield priority to Compose initial frame render
                 value = loadThumbnail(context, file, category, 128, 128)
             }
         }

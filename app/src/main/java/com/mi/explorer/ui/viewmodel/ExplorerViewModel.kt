@@ -156,7 +156,8 @@ data class FtpServerState(
 class ExplorerViewModel(application: Application) : AndroidViewModel(application) {
 
     val fileRepository = FileRepository(application.applicationContext)
-    val appsRepository = AppsRepository(application.applicationContext)
+    private val _appsRepository = lazy { AppsRepository(application.applicationContext) }
+    val appsRepository get() = _appsRepository.value
 
     // Current Screen
     private val _currentScreen = MutableStateFlow(Screen.MAIN)
@@ -238,29 +239,37 @@ class ExplorerViewModel(application: Application) : AndroidViewModel(application
     private val _apkInstallTarget = MutableStateFlow<ApkFileItem?>(null)
     val apkInstallTarget: StateFlow<ApkFileItem?> = _apkInstallTarget.asStateFlow()
 
-    // Vault Repository & State
-    val vaultRepository = VaultRepository(application)
-    val isVaultPinSet = MutableStateFlow(vaultRepository.isPinSet())
+    // Debounce tracking for directory loading
+    private var lastLoadedDirPath: String? = null
+    private var lastLoadTimestamp: Long = 0L
+
+    // Vault Repository & State (Lazy initialized when user opens Vault)
+    private val _vaultRepository = lazy { VaultRepository(application) }
+    val vaultRepository get() = _vaultRepository.value
+    val isVaultPinSet = MutableStateFlow(false)
     val isVaultUnlocked = MutableStateFlow(false)
     private val _vaultFiles = MutableStateFlow<List<FileItem>>(emptyList())
     val vaultFiles: StateFlow<List<FileItem>> = _vaultFiles.asStateFlow()
     val isVaultLoading = MutableStateFlow(false)
 
-    // Duplicate Repository & State
-    val duplicateRepository = DuplicateRepository(application)
+    // Duplicate Repository & State (Lazy)
+    private val _duplicateRepository = lazy { DuplicateRepository(application) }
+    val duplicateRepository get() = _duplicateRepository.value
     private val _duplicateScanResult = MutableStateFlow<DuplicateScanResult?>(null)
     val duplicateScanResult: StateFlow<DuplicateScanResult?> = _duplicateScanResult.asStateFlow()
     val isDuplicateScanning = MutableStateFlow(false)
     val selectedDuplicateFiles = MutableStateFlow<Set<FileItem>>(emptySet())
 
-    // Storage Analyzer Repository & State
-    val storageAnalyzerRepository = StorageAnalyzerRepository(application)
+    // Storage Analyzer Repository & State (Lazy)
+    private val _storageAnalyzerRepository = lazy { StorageAnalyzerRepository(application) }
+    val storageAnalyzerRepository get() = _storageAnalyzerRepository.value
     private val _storageAnalysisResult = MutableStateFlow<StorageAnalysisResult?>(null)
     val storageAnalysisResult: StateFlow<StorageAnalysisResult?> = _storageAnalysisResult.asStateFlow()
     val isStorageAnalyzing = MutableStateFlow(false)
 
-    // Zip Viewer & Compressor State
-    val zipRepository = ZipRepository(application)
+    // Zip Viewer & Compressor State (Lazy)
+    private val _zipRepository = lazy { ZipRepository(application) }
+    val zipRepository get() = _zipRepository.value
     private val _zipViewerState = MutableStateFlow(ZipViewerState())
     val zipViewerState: StateFlow<ZipViewerState> = _zipViewerState.asStateFlow()
     val isZipExtracting = MutableStateFlow(false)
@@ -268,14 +277,16 @@ class ExplorerViewModel(application: Application) : AndroidViewModel(application
     // AMOLED Pitch Black Mode State
     val isAmoledMode = MutableStateFlow(false)
 
-    // Recycle Bin (Trash)
-    val trashRepository = TrashRepository(application)
+    // Recycle Bin (Trash) (Lazy)
+    private val _trashRepository = lazy { TrashRepository(application) }
+    val trashRepository get() = _trashRepository.value
     private val _trashItems = MutableStateFlow<List<TrashItem>>(emptyList())
     val trashItems: StateFlow<List<TrashItem>> = _trashItems.asStateFlow()
     val isTrashLoading = MutableStateFlow(false)
 
-    // Favorites / Pinned Folders
-    val favoritesRepository = FavoritesRepository(application)
+    // Favorites / Pinned Folders (Lazy)
+    private val _favoritesRepository = lazy { FavoritesRepository(application) }
+    val favoritesRepository get() = _favoritesRepository.value
     private val _favorites = MutableStateFlow<List<FavoriteItem>>(emptyList())
     val favorites: StateFlow<List<FavoriteItem>> = _favorites.asStateFlow()
 
@@ -297,14 +308,16 @@ class ExplorerViewModel(application: Application) : AndroidViewModel(application
     private val _message = MutableStateFlow<String?>(null)
     val message: StateFlow<String?> = _message.asStateFlow()
 
-    // 1. Tags Repository & State
-    val tagsRepository = TagsRepository(application)
+    // 1. Tags Repository & State (Lazy)
+    private val _tagsRepository = lazy { TagsRepository(application) }
+    val tagsRepository get() = _tagsRepository.value
     private val _fileTagsMap = MutableStateFlow<Map<String, List<String>>>(emptyMap())
     val fileTagsMap: StateFlow<Map<String, List<String>>> = _fileTagsMap.asStateFlow()
     val selectedTagFilter = MutableStateFlow<String?>(null)
 
-    // 2. Network Drives (Cloud / SMB / WebDAV)
-    val networkStorageRepository = NetworkStorageRepository(application)
+    // 2. Network Drives (Cloud / SMB / WebDAV) (Lazy)
+    private val _networkStorageRepository = lazy { NetworkStorageRepository(application) }
+    val networkStorageRepository get() = _networkStorageRepository.value
     private val _networkDrives = MutableStateFlow<List<NetworkDrive>>(emptyList())
     val networkDrives: StateFlow<List<NetworkDrive>> = _networkDrives.asStateFlow()
     private val _activeNetworkDrive = MutableStateFlow<NetworkDrive?>(null)
@@ -315,8 +328,9 @@ class ExplorerViewModel(application: Application) : AndroidViewModel(application
     val isTestingNetworkDrive = MutableStateFlow(false)
     val isScanningLan = MutableStateFlow(false)
 
-    // 3. Fast Share (Direct P2P Offline Wi-Fi Transfer)
-    val fastShareRepository = FastShareRepository(application)
+    // 3. Fast Share (Direct P2P Offline Wi-Fi Transfer) (Lazy)
+    private val _fastShareRepository = lazy { FastShareRepository(application) }
+    val fastShareRepository get() = _fastShareRepository.value
     private val _fastShareState = MutableStateFlow(FastShareState())
     val fastShareState: StateFlow<FastShareState> = _fastShareState.asStateFlow()
 
@@ -349,10 +363,17 @@ class ExplorerViewModel(application: Application) : AndroidViewModel(application
     val xapkInstallProgress = MutableStateFlow("")
 
     // 7. Biometric Vault Unlock
-    val isBiometricVaultEnabled = MutableStateFlow(vaultRepository.isBiometricEnabled())
+    val isBiometricVaultEnabled = MutableStateFlow(false)
 
-    // 8. Wireless Web Share (HTTP Server)
-    private val webShareServer = WebShareServer(application)
+    // 8. Wireless Web Share (HTTP Server) (Lazy)
+    private val _webShareServer = lazy {
+        WebShareServer(application).apply {
+            onStateChanged = { state ->
+                _webShareState.value = state
+            }
+        }
+    }
+    private val webShareServer get() = _webShareServer.value
     private val _webShareState = MutableStateFlow(WebShareState(ipAddress = ""))
     val webShareState: StateFlow<WebShareState> = _webShareState.asStateFlow()
 
@@ -361,36 +382,38 @@ class ExplorerViewModel(application: Application) : AndroidViewModel(application
     val isShredding = MutableStateFlow(false)
     val shredProgress = MutableStateFlow(ShredProgress())
 
-    // 10. WhatsApp / Social Status Saver & Sent Media Cleaner
-    val socialStatusRepository = SocialStatusRepository(application)
+    // 10. WhatsApp / Social Status Saver & Sent Media Cleaner (Lazy)
+    private val _socialStatusRepository = lazy { SocialStatusRepository(application) }
+    val socialStatusRepository get() = _socialStatusRepository.value
     val activeStatuses = MutableStateFlow<List<StatusMediaItem>>(emptyList())
     val savedStatuses = MutableStateFlow<List<StatusMediaItem>>(emptyList())
     val sentMediaSummary = MutableStateFlow(SentMediaSummary(0, 0L, emptyList()))
     val isStatusLoading = MutableStateFlow(false)
 
-    // 11. Smart Collections / Virtual Folders
-    val smartCollectionsRepository = SmartCollectionsRepository(application)
+    // 11. Smart Collections / Virtual Folders (Lazy)
+    private val _smartCollectionsRepository = lazy { SmartCollectionsRepository(application) }
+    val smartCollectionsRepository get() = _smartCollectionsRepository.value
     val smartCollections = MutableStateFlow<List<SmartCollection>>(emptyList())
     val activeCollectionFiles = MutableStateFlow<CollectionWithFiles?>(null)
     val isCollectionLoading = MutableStateFlow(false)
 
-    // 12. Storage Time Machine / On This Day
-    val timeMachineRepository = TimeMachineRepository()
+    // 12. Storage Time Machine / On This Day (Lazy)
+    private val _timeMachineRepository = lazy { TimeMachineRepository() }
+    val timeMachineRepository get() = _timeMachineRepository.value
     val timeMachineData = MutableStateFlow<TimeMachineData?>(null)
     val isTimeMachineLoading = MutableStateFlow(false)
 
     init {
+        // 1. Instantly start non-blocking directory and storage queries
         refreshStorage()
         loadDirectory(initialDir)
-        loadFavorites()
-        loadTags()
+
+        // 2. Defer non-critical tags, favorites, and volume scans slightly so first frame draws with 0 lag
         viewModelScope.launch(Dispatchers.IO) {
             delay(150)
+            loadFavorites()
+            loadTags()
             loadStorageVolumes()
-        }
-
-        webShareServer.onStateChanged = { state ->
-            _webShareState.value = state
         }
     }
 
@@ -454,19 +477,26 @@ class ExplorerViewModel(application: Application) : AndroidViewModel(application
     }
 
     fun refreshStorage() {
-        viewModelScope.launch {
+        viewModelScope.launch(Dispatchers.IO) {
             _storageSpace.value = fileRepository.getStorageSpace()
         }
     }
 
     fun onStoragePermissionGranted() {
-        refreshStorage()
         val currentDir = _storageState.value.currentDir
         val targetDir = if (currentDir.exists() && currentDir.canRead()) {
             currentDir
         } else {
             fileRepository.rootStorageDirectory
         }
+
+        val now = System.currentTimeMillis()
+        if (lastLoadedDirPath == targetDir.absolutePath && (now - lastLoadTimestamp) < 1200L) {
+            // Avoid redundant duplicate disk sweep on cold boot
+            return
+        }
+
+        refreshStorage()
         loadDirectory(targetDir)
         if (_selectedTab.value == MiTab.RECENT) {
             loadRecentFiles()
@@ -474,7 +504,7 @@ class ExplorerViewModel(application: Application) : AndroidViewModel(application
     }
 
     fun loadRecentFiles() {
-        viewModelScope.launch {
+        viewModelScope.launch(Dispatchers.IO) {
             isRecentLoading.value = true
             val files = fileRepository.getRecentFiles()
             _recentFiles.value = files
@@ -483,7 +513,9 @@ class ExplorerViewModel(application: Application) : AndroidViewModel(application
     }
 
     fun loadDirectory(dir: File, addToHistory: Boolean = false) {
-        viewModelScope.launch {
+        lastLoadedDirPath = dir.absolutePath
+        lastLoadTimestamp = System.currentTimeMillis()
+        viewModelScope.launch(Dispatchers.IO) {
             val current = _storageState.value
             val isSameDir = current.currentDir.absolutePath == dir.absolutePath
             val hasItems = isSameDir && current.items.isNotEmpty()
@@ -1270,6 +1302,7 @@ class ExplorerViewModel(application: Application) : AndroidViewModel(application
     // Vault Functions
     fun openVault() {
         isVaultPinSet.value = vaultRepository.isPinSet()
+        isBiometricVaultEnabled.value = vaultRepository.isBiometricEnabled()
         navigateToScreen(Screen.VAULT)
     }
 
@@ -1613,8 +1646,9 @@ class ExplorerViewModel(application: Application) : AndroidViewModel(application
     // ==========================================
 
     fun loadFavorites() {
-        viewModelScope.launch {
-            _favorites.value = favoritesRepository.getFavorites()
+        viewModelScope.launch(Dispatchers.IO) {
+            val favs = favoritesRepository.getFavorites()
+            _favorites.value = favs
         }
     }
 
@@ -1908,8 +1942,9 @@ class ExplorerViewModel(application: Application) : AndroidViewModel(application
     // 1. Color Tags & Labels
     // ==========================================
     fun loadTags() {
-        viewModelScope.launch {
-            _fileTagsMap.value = tagsRepository.getFileTagsMap()
+        viewModelScope.launch(Dispatchers.IO) {
+            val map = tagsRepository.getFileTagsMap()
+            _fileTagsMap.value = map
         }
     }
 
@@ -2538,9 +2573,15 @@ class ExplorerViewModel(application: Application) : AndroidViewModel(application
         mediaPlayer = null
         activeFtpServer?.stop()
         activeFtpServer = null
-        webShareServer.stop()
-        fastShareRepository.stopShareServer()
-        vaultRepository.clearTempPreviewCache()
+        if (_webShareServer.isInitialized()) {
+            _webShareServer.value.stop()
+        }
+        if (_fastShareRepository.isInitialized()) {
+            _fastShareRepository.value.stopShareServer()
+        }
+        if (_vaultRepository.isInitialized()) {
+            _vaultRepository.value.clearTempPreviewCache()
+        }
     }
 
     fun showMessage(msg: String) {

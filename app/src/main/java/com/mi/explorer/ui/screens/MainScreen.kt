@@ -1133,144 +1133,44 @@ fun StorageTabContent(
                         }
                     }
 
+                    val utilitiesList = remember(
+                        onPinWidgetClick, onAppInstallerClick, onStatusSaverClick,
+                        onWebShareClick, onSmartCollectionsClick, onTimeMachineClick,
+                        onFileShredderClick, onVaultClick, onFastShareClick,
+                        onAppManagerClick, onNetworkDrivesClick, onTrashClick,
+                        onAnalyzerClick, onDuplicatesClick, onFtpClick
+                    ) {
+                        listOf(
+                            Triple("Home Widget", "Pin Storage Card", Icons.Default.Widgets to Color(0xFF0EA5E9)) to onPinWidgetClick,
+                            Triple("App Installer", "Install APK / XAPK", Icons.Default.InstallMobile to Color(0xFF059669)) to onAppInstallerClick,
+                            Triple("Status Saver", "WhatsApp Status", Icons.Default.BookmarkAdded to Color(0xFF10B981)) to onStatusSaverClick,
+                            Triple("PC Web Portal", "Send & Receive", Icons.Default.Language to Color(0xFF2563EB)) to onWebShareClick,
+                            Triple("Smart Hubs", "Auto Collections", Icons.Default.AutoAwesomeMosaic to Color(0xFF8B5CF6)) to onSmartCollectionsClick,
+                            Triple("Time Machine", "On This Day", Icons.Default.History to Color(0xFFF59E0B)) to onTimeMachineClick,
+                            Triple("File Shredder", "DoD 3-Pass Wipe", Icons.Default.EnhancedEncryption to Color(0xFFEF4444)) to onFileShredderClick,
+                            Triple("Private Vault", "Fingerprint safe", Icons.Default.Lock to MiOrange) to onVaultClick,
+                            Triple("Mi Fast Share", "Direct Wi-Fi", Icons.Default.WifiTethering to Color(0xFF10B981)) to onFastShareClick,
+                            Triple("APK Cloner & Hub", "Backup & Rollback", Icons.Default.Android to Color(0xFF8B5CF6)) to onAppManagerClick,
+                            Triple("Cloud Drives", "SMB / WebDAV", Icons.Default.CloudQueue to Color(0xFF0EA5E9)) to onNetworkDrivesClick,
+                            Triple("Recycle Bin", "30d auto-purge", Icons.Default.DeleteOutline to Color(0xFFEF4444)) to onTrashClick,
+                            Triple("Analyzer", "Storage map", Icons.Default.PieChart to Color(0xFF3B82F6)) to onAnalyzerClick,
+                            Triple("Duplicates", "Clean redundant", Icons.Default.ContentCopy to Color(0xFF14B8A6)) to onDuplicatesClick,
+                            Triple("Transfer to PC", "FTP server", Icons.Default.Wifi to Color(0xFF6366F1)) to onFtpClick
+                        )
+                    }
+
                     LazyRow(
                         modifier = Modifier.fillMaxWidth(),
                         contentPadding = PaddingValues(horizontal = 16.dp),
                         horizontalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
-                        item {
+                        items(utilitiesList, key = { it.first.first }) { (meta, onClick) ->
                             UtilityCard(
-                                title = "Home Widget",
-                                subtitle = "Pin Storage Card",
-                                icon = Icons.Default.Widgets,
-                                color = Color(0xFF0EA5E9),
-                                onClick = onPinWidgetClick
-                            )
-                        }
-                        item {
-                            UtilityCard(
-                                title = "App Installer",
-                                subtitle = "Install APK / XAPK",
-                                icon = Icons.Default.InstallMobile,
-                                color = Color(0xFF059669),
-                                onClick = onAppInstallerClick
-                            )
-                        }
-                        item {
-                            UtilityCard(
-                                title = "Status Saver",
-                                subtitle = "WhatsApp Status",
-                                icon = Icons.Default.BookmarkAdded,
-                                color = Color(0xFF10B981),
-                                onClick = onStatusSaverClick
-                            )
-                        }
-                        item {
-                            UtilityCard(
-                                title = "PC Web Portal",
-                                subtitle = "Send & Receive",
-                                icon = Icons.Default.Language,
-                                color = Color(0xFF2563EB),
-                                onClick = onWebShareClick
-                            )
-                        }
-                        item {
-                            UtilityCard(
-                                title = "Smart Hubs",
-                                subtitle = "Auto Collections",
-                                icon = Icons.Default.AutoAwesomeMosaic,
-                                color = Color(0xFF8B5CF6),
-                                onClick = onSmartCollectionsClick
-                            )
-                        }
-                        item {
-                            UtilityCard(
-                                title = "Time Machine",
-                                subtitle = "On This Day",
-                                icon = Icons.Default.History,
-                                color = Color(0xFFF59E0B),
-                                onClick = onTimeMachineClick
-                            )
-                        }
-                        item {
-                            UtilityCard(
-                                title = "File Shredder",
-                                subtitle = "DoD 3-Pass Wipe",
-                                icon = Icons.Default.EnhancedEncryption,
-                                color = Color(0xFFEF4444),
-                                onClick = onFileShredderClick
-                            )
-                        }
-                        item {
-                            UtilityCard(
-                                title = "Private Vault",
-                                subtitle = "Fingerprint safe",
-                                icon = Icons.Default.Lock,
-                                color = MiOrange,
-                                onClick = onVaultClick
-                            )
-                        }
-                        item {
-                            UtilityCard(
-                                title = "Mi Fast Share",
-                                subtitle = "Direct Wi-Fi",
-                                icon = Icons.Default.WifiTethering,
-                                color = Color(0xFF10B981),
-                                onClick = onFastShareClick
-                            )
-                        }
-                        item {
-                            UtilityCard(
-                                title = "APK Cloner & Hub",
-                                subtitle = "Backup & Rollback",
-                                icon = Icons.Default.Android,
-                                color = Color(0xFF8B5CF6),
-                                onClick = onAppManagerClick
-                            )
-                        }
-                        item {
-                            UtilityCard(
-                                title = "Cloud Drives",
-                                subtitle = "SMB / WebDAV",
-                                icon = Icons.Default.CloudQueue,
-                                color = Color(0xFF0EA5E9),
-                                onClick = onNetworkDrivesClick
-                            )
-                        }
-                        item {
-                            UtilityCard(
-                                title = "Recycle Bin",
-                                subtitle = "30d auto-purge",
-                                icon = Icons.Default.DeleteOutline,
-                                color = Color(0xFFEF4444),
-                                onClick = onTrashClick
-                            )
-                        }
-                        item {
-                            UtilityCard(
-                                title = "Analyzer",
-                                subtitle = "Storage map",
-                                icon = Icons.Default.PieChart,
-                                color = Color(0xFF3B82F6),
-                                onClick = onAnalyzerClick
-                            )
-                        }
-                        item {
-                            UtilityCard(
-                                title = "Duplicates",
-                                subtitle = "Clean redundant",
-                                icon = Icons.Default.ContentCopy,
-                                color = Color(0xFF14B8A6),
-                                onClick = onDuplicatesClick
-                            )
-                        }
-                        item {
-                            UtilityCard(
-                                title = "Transfer to PC",
-                                subtitle = "FTP server",
-                                icon = Icons.Default.Wifi,
-                                color = Color(0xFF6366F1),
-                                onClick = onFtpClick
+                                title = meta.first,
+                                subtitle = meta.second,
+                                icon = meta.third.first,
+                                color = meta.third.second,
+                                onClick = onClick
                             )
                         }
                     }
@@ -1311,7 +1211,8 @@ fun StorageTabContent(
                             horizontalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
                             items(favorites, key = { it.path }) { fav ->
-                                val (favIcon, favColor) = getFileItemIconAndColor(FileItem(fav.file))
+                                val favIcon = if (fav.isDirectory) Icons.Default.Folder else Icons.Default.InsertDriveFile
+                                val favColor = if (fav.isDirectory) Color(0xFFFFB300) else Color(0xFF2563EB)
                                 Surface(
                                     modifier = Modifier
                                         .clip(RoundedCornerShape(12.dp))
