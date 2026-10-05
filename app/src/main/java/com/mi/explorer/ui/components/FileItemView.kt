@@ -2,6 +2,8 @@ package com.mi.explorer.ui.components
 
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
@@ -56,7 +58,7 @@ fun MiFileRow(
     var showMenu by remember { mutableStateOf(false) }
     val (icon, color) = getFileItemIconAndColor(item)
 
-    val itemBg = if (isSelected) MiOrange.copy(alpha = 0.08f) else Color.Transparent
+    val itemBg = if (isSelected) Color(0xFF1E88E5).copy(alpha = 0.08f) else Color.Transparent
 
     Row(
         modifier = modifier
@@ -71,15 +73,6 @@ fun MiFileRow(
             .testTag("mi_file_row_${item.name}"),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        if (isSelectionMode) {
-            Checkbox(
-                checked = isSelected,
-                onCheckedChange = { onToggleSelect() },
-                colors = CheckboxDefaults.colors(checkedColor = MiOrange),
-                modifier = Modifier.padding(end = 8.dp)
-            )
-        }
-
         // MIUI Squircle icon badge with Material Icon and format chip
         FileIconHelper.FileIconBadge(
             item = item,
@@ -192,26 +185,58 @@ fun MiFileRow(
             }
         }
 
-        Box {
-            IconButton(
-                onClick = { showMenu = true },
-                modifier = Modifier.size(36.dp)
+        if (isSelectionMode) {
+            Box(
+                modifier = Modifier
+                    .size(36.dp)
+                    .clickable { onToggleSelect() },
+                contentAlignment = Alignment.Center
             ) {
-                Icon(
-                    imageVector = Icons.Default.MoreVert,
-                    contentDescription = "Menu",
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.size(18.dp)
+                if (isSelected) {
+                    Box(
+                        modifier = Modifier
+                            .size(24.dp)
+                            .clip(CircleShape)
+                            .background(Color(0xFF1E88E5)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Check,
+                            contentDescription = "Selected",
+                            tint = Color.White,
+                            modifier = Modifier.size(16.dp)
+                        )
+                    }
+                } else {
+                    Box(
+                        modifier = Modifier
+                            .size(24.dp)
+                            .border(1.8.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.5f), CircleShape)
+                    )
+                }
+            }
+        } else {
+            Box {
+                IconButton(
+                    onClick = { showMenu = true },
+                    modifier = Modifier.size(36.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.MoreVert,
+                        contentDescription = "Menu",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
+
+                FileActionDropdownMenu(
+                    expanded = showMenu,
+                    onDismiss = { showMenu = false },
+                    item = item,
+                    onClick = onClick,
+                    onMenuAction = onMenuAction
                 )
             }
-
-            FileActionDropdownMenu(
-                expanded = showMenu,
-                onDismiss = { showMenu = false },
-                item = item,
-                onClick = onClick,
-                onMenuAction = onMenuAction
-            )
         }
     }
 }
@@ -405,39 +430,60 @@ fun MiFileGridItem(
                 .fillMaxWidth()
                 .padding(8.dp)
         ) {
-            // Checkbox on top-left in selection mode
+            // Top Right: Selection Circle or Kebab Menu
             if (isSelectionMode) {
-                Checkbox(
-                    checked = isSelected,
-                    onCheckedChange = { onToggleSelect() },
-                    colors = CheckboxDefaults.colors(checkedColor = MiOrange),
+                Box(
                     modifier = Modifier
-                        .align(Alignment.TopStart)
-                        .size(24.dp)
-                )
-            }
-
-            // Kebab Menu on top-right
-            Box(modifier = Modifier.align(Alignment.TopEnd)) {
-                IconButton(
-                    onClick = { showMenu = true },
-                    modifier = Modifier.size(26.dp)
+                        .align(Alignment.TopEnd)
+                        .size(30.dp)
+                        .clickable { onToggleSelect() },
+                    contentAlignment = Alignment.Center
                 ) {
-                    Icon(
-                        imageVector = Icons.Default.MoreVert,
-                        contentDescription = "Menu",
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
-                        modifier = Modifier.size(16.dp)
+                    if (isSelected) {
+                        Box(
+                            modifier = Modifier
+                                .size(22.dp)
+                                .clip(CircleShape)
+                                .background(Color(0xFF1E88E5)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Check,
+                                contentDescription = "Selected",
+                                tint = Color.White,
+                                modifier = Modifier.size(15.dp)
+                            )
+                        }
+                    } else {
+                        Box(
+                            modifier = Modifier
+                                .size(22.dp)
+                                .border(1.8.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.5f), CircleShape)
+                        )
+                    }
+                }
+            } else {
+                Box(modifier = Modifier.align(Alignment.TopEnd)) {
+                    IconButton(
+                        onClick = { showMenu = true },
+                        modifier = Modifier.size(26.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.MoreVert,
+                            contentDescription = "Menu",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                            modifier = Modifier.size(16.dp)
+                        )
+                    }
+
+                    FileActionDropdownMenu(
+                        expanded = showMenu,
+                        onDismiss = { showMenu = false },
+                        item = item,
+                        onClick = onClick,
+                        onMenuAction = onMenuAction
                     )
                 }
-
-                FileActionDropdownMenu(
-                    expanded = showMenu,
-                    onDismiss = { showMenu = false },
-                    item = item,
-                    onClick = onClick,
-                    onMenuAction = onMenuAction
-                )
             }
 
             Column(

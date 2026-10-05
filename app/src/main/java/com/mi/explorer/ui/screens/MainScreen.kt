@@ -1,10 +1,14 @@
 package com.mi.explorer.ui.screens
 
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.os.Build
 import android.os.Environment
 import android.provider.Settings
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
@@ -38,6 +42,7 @@ import com.mi.explorer.ui.theme.MiOrange
 import com.mi.explorer.ui.viewmodel.ExplorerViewModel
 import com.mi.explorer.ui.viewmodel.Screen
 import com.mi.explorer.ui.viewmodel.StorageTabState
+import com.mi.explorer.utils.FileOpener
 import java.io.File
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -84,10 +89,35 @@ fun MainScreen(
     var tagTarget by remember { mutableStateOf<FileItem?>(null) }
     var exifCleanerTarget by remember { mutableStateOf<FileItem?>(null) }
 
+    val context = LocalContext.current
+    BackHandler(enabled = storageState.isSelectionMode) {
+        viewModel.clearSelection()
+    }
+
     Scaffold(
         modifier = modifier.testTag("main_screen"),
         topBar = {
-            if (isSearchActive) {
+            if (storageState.isSelectionMode) {
+                val isRecentTab = selectedTab == MiTab.RECENT
+                val currentTargetList = if (isRecentTab) recentFiles else storageState.displayItems
+                val totalItemsCount = currentTargetList.size
+                val isAllSelected = currentTargetList.isNotEmpty() && storageState.selectedItems.containsAll(currentTargetList)
+                val subtitleText = if (isRecentTab) "Today | $totalItemsCount items" else "${storageState.currentDir.name} | $totalItemsCount items"
+
+                MiSelectionTopBar(
+                    selectedCount = storageState.selectedItems.size,
+                    subtitle = subtitleText,
+                    isAllSelected = isAllSelected,
+                    onClose = { viewModel.clearSelection() },
+                    onToggleSelectAll = {
+                        if (isAllSelected) {
+                            viewModel.clearSelection()
+                        } else {
+                            viewModel.selectAll(currentTargetList)
+                        }
+                    }
+                )
+            } else if (isSearchActive) {
                 Surface(
                     modifier = Modifier.fillMaxWidth(),
                     color = MaterialTheme.colorScheme.background
@@ -140,11 +170,70 @@ fun MainScreen(
             }
         },
         bottomBar = {
-            MiClipboardBar(
-                clipboardState = clipboardState,
-                onPaste = { viewModel.pasteToCurrentDirectory() },
-                onClear = { viewModel.clearClipboard() }
-            )
+            if (storageState.isSelectionMode) {
+                MiSelectionBottomBar(
+                    selectedItems = storageState.selectedItems.toList(),
+                    onSend = {
+                        val items = storageState.selectedItems.toList()
+                        if (items.size == 1) {
+                            FileOpener.shareFile(context, items.first())
+                        } else {
+                            FileOpener.shareMultipleFiles(context, items)
+                        }
+                    },
+                    onMove = {
+                        viewModel.cutSelected()
+                    },
+                    onDelete = {
+                        deleteTargets = storageState.selectedItems.toList()
+                    },
+                    onCopyToClipboard = {
+                        val items = storageState.selectedItems.toList()
+                        val text = items.joinToString("\n") { it.path }
+                        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                        val clip = ClipData.newPlainText("File Path", text)
+                        clipboard.setPrimaryClip(clip)
+                        viewModel.showMessage("Copied path to clipboard")
+                        viewModel.clearSelection()
+                    },
+                    onCopy = {
+                        viewModel.copySelected()
+                    },
+                    onMakePrivate = {
+                        viewModel.addFilesToVault(storageState.selectedItems.toList())
+                    },
+                    onToggleFavorite = {
+                        viewModel.toggleFavorites(storageState.selectedItems.toList())
+                    },
+                    onRename = {
+                        val items = storageState.selectedItems.toList()
+                        if (items.size == 1) {
+                            renameTarget = items.first()
+                            renameNewName = items.first().name
+                        } else {
+                            showBatchRenameDialog = true
+                        }
+                    },
+                    onOpenInAnotherApp = {
+                        val items = storageState.selectedItems.toList()
+                        if (items.size == 1) {
+                            openWithTarget = items.first()
+                        }
+                    },
+                    onDetails = {
+                        val items = storageState.selectedItems.toList()
+                        if (items.size == 1) {
+                            detailsTarget = items.first()
+                        }
+                    }
+                )
+            } else {
+                MiClipboardBar(
+                    clipboardState = clipboardState,
+                    onPaste = { viewModel.pasteToCurrentDirectory() },
+                    onClear = { viewModel.clearClipboard() }
+                )
+            }
         }
     ) { innerPadding ->
         Column(
@@ -152,7 +241,6 @@ fun MainScreen(
                 .fillMaxSize()
                 .padding(innerPadding)
         ) {
-            val context = LocalContext.current
             var hasAllFilesAccess by remember {
                 mutableStateOf(
                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
@@ -277,7 +365,9 @@ fun MainScreen(
                                 "unzip" -> viewModel.openZipViewer(item.file)
                             }
                         },
-                        onRefresh = { viewModel.loadRecentFiles() }
+                        onRefresh = { viewModel.loadRecentFiles() },
+                        selectedItems = storageState.selectedItems,
+                        onToggleSelect = { viewModel.toggleSelectItem(it) }
                     )
                 }
                 MiTab.STORAGE -> {
@@ -807,7 +897,9 @@ fun RecentTabContent(
     onFilterSelected: (String) -> Unit,
     onOpenFile: (FileItem) -> Unit,
     onMenuAction: (String, FileItem) -> Unit,
-    onRefresh: () -> Unit
+    onRefresh: () -> Unit,
+    selectedItems: Set<FileItem> = emptySet(),
+    onToggleSelect: (FileItem) -> Unit = {}
 ) {
     val filters = listOf("All", "🔥 Big Files (>10MB)", "Images", "Docs", "APKs", "Archives", "Music")
 
@@ -945,14 +1037,16 @@ fun RecentTabContent(
                             horizontalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
                             rowItems.forEach { file ->
+                                val isSelected = selectedItems.contains(file)
+                                val isSelectionMode = selectedItems.isNotEmpty()
                                 Box(modifier = Modifier.weight(1f)) {
                                     MiFileGridItem(
                                         item = file,
-                                        isSelected = false,
-                                        isSelectionMode = false,
-                                        onClick = { onOpenFile(file) },
-                                        onLongClick = {},
-                                        onToggleSelect = {},
+                                        isSelected = isSelected,
+                                        isSelectionMode = isSelectionMode,
+                                        onClick = { if (isSelectionMode) onToggleSelect(file) else onOpenFile(file) },
+                                        onLongClick = { onToggleSelect(file) },
+                                        onToggleSelect = { onToggleSelect(file) },
                                         onMenuAction = { onMenuAction(it, file) }
                                     )
                                 }
@@ -964,13 +1058,15 @@ fun RecentTabContent(
                     }
                 } else {
                     items(files, key = { it.path }) { file ->
+                        val isSelected = selectedItems.contains(file)
+                        val isSelectionMode = selectedItems.isNotEmpty()
                         MiFileRow(
                             item = file,
-                            isSelected = false,
-                            isSelectionMode = false,
-                            onClick = { onOpenFile(file) },
-                            onLongClick = {},
-                            onToggleSelect = {},
+                            isSelected = isSelected,
+                            isSelectionMode = isSelectionMode,
+                            onClick = { if (isSelectionMode) onToggleSelect(file) else onOpenFile(file) },
+                            onLongClick = { onToggleSelect(file) },
+                            onToggleSelect = { onToggleSelect(file) },
                             onMenuAction = { onMenuAction(it, file) },
                             modifier = Modifier.padding(horizontal = 12.dp)
                         )
@@ -1429,49 +1525,16 @@ fun StorageTabContent(
             }
         }
 
-        // Action Toolbar (New Folder, New File, Select All, Batch Rename)
-        item {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 4.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
-                if (storageState.isSelectionMode) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(
-                            text = "${storageState.selectedItems.size} selected",
-                            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold, color = MiOrange)
-                        )
-                    }
-
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        IconButton(onClick = onFastShareSelected, modifier = Modifier.size(34.dp)) {
-                            Icon(Icons.Default.WifiTethering, contentDescription = "Fast Share", tint = Color(0xFF10B981))
-                        }
-                        if (storageState.selectedItems.size >= 2) {
-                            IconButton(onClick = onBatchRename, modifier = Modifier.size(34.dp)) {
-                                Icon(Icons.Default.DriveFileRenameOutline, contentDescription = "Batch Rename", tint = MiOrange)
-                            }
-                        }
-                        IconButton(onClick = onCopySelected, modifier = Modifier.size(34.dp)) {
-                            Icon(Icons.Default.ContentCopy, contentDescription = "Copy")
-                        }
-                        IconButton(onClick = onCutSelected, modifier = Modifier.size(34.dp)) {
-                            Icon(Icons.Default.ContentCut, contentDescription = "Cut")
-                        }
-                        IconButton(onClick = onZipSelected, modifier = Modifier.size(34.dp)) {
-                            Icon(Icons.Default.Archive, contentDescription = "Zip")
-                        }
-                        IconButton(onClick = onDeleteSelected, modifier = Modifier.size(34.dp)) {
-                            Icon(Icons.Default.Delete, contentDescription = "Delete", tint = Color(0xFFEF4444))
-                        }
-                        IconButton(onClick = onClearSelection, modifier = Modifier.size(34.dp)) {
-                            Icon(Icons.Default.Close, contentDescription = "Clear")
-                        }
-                    }
-                } else {
+        // Action Toolbar (New Folder, New File, Select All)
+        if (!storageState.isSelectionMode) {
+            item {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         FilledTonalButton(
                             onClick = onNewFolder,

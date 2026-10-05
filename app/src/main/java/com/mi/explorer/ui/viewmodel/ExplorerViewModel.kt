@@ -638,9 +638,10 @@ class ExplorerViewModel(application: Application) : AndroidViewModel(application
         }
     }
 
-    fun selectAll() {
+    fun selectAll(items: List<FileItem>? = null) {
         _storageState.update { state ->
-            state.copy(selectedItems = state.items.toSet())
+            val toSelect = items ?: state.displayItems
+            state.copy(selectedItems = toSelect.toSet())
         }
     }
 
@@ -1372,6 +1373,22 @@ class ExplorerViewModel(application: Application) : AndroidViewModel(application
         }
     }
 
+    fun addFilesToVault(items: List<FileItem>) {
+        if (items.isEmpty()) return
+        viewModelScope.launch {
+            var count = 0
+            for (item in items) {
+                if (vaultRepository.addToVault(item.file)) {
+                    count++
+                }
+            }
+            clearSelection()
+            showMessage("Moved $count item(s) to Private Vault")
+            loadDirectory(_storageState.value.currentDir)
+            if (isVaultUnlocked.value) loadVaultFiles()
+        }
+    }
+
     fun restoreFileFromVault(item: FileItem) {
         viewModelScope.launch {
             val target = android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_DOWNLOADS).let {
@@ -1657,6 +1674,18 @@ class ExplorerViewModel(application: Application) : AndroidViewModel(application
             val isNowFav = favoritesRepository.toggleFavorite(file, customName)
             loadFavorites()
             showMessage(if (isNowFav) "Added to Favorites" else "Removed from Favorites")
+        }
+    }
+
+    fun toggleFavorites(items: List<FileItem>) {
+        if (items.isEmpty()) return
+        viewModelScope.launch {
+            for (item in items) {
+                favoritesRepository.toggleFavorite(item.file, item.name)
+            }
+            loadFavorites()
+            clearSelection()
+            showMessage("Updated favorites for ${items.size} item(s)")
         }
     }
 
