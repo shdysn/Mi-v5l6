@@ -128,60 +128,69 @@ fun MiFileRow(
                 }
             }
             Spacer(modifier = Modifier.height(3.dp))
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(6.dp)
-            ) {
+            if (item.isDirectory) {
+                // Folder: only date, no 'Folder' label and no time
                 Text(
-                    text = item.formattedSize,
-                    style = MaterialTheme.typography.bodySmall.copy(
-                        fontWeight = if (item.isLarge) FontWeight.Bold else FontWeight.Medium
-                    ),
-                    color = when {
-                        item.isHuge -> Color(0xFFDC2626)
-                        item.isVeryLarge -> Color(0xFFEA580C)
-                        item.isLarge -> MiOrange
-                        else -> MaterialTheme.colorScheme.onSurfaceVariant
-                    }
-                )
-
-                item.sizeBadgeText?.let { badge ->
-                    Surface(
-                        color = when {
-                            item.isHuge -> Color(0xFFFEE2E2)
-                            item.isVeryLarge -> Color(0xFFFFEDD5)
-                            item.isLarge -> MiOrange.copy(alpha = 0.14f)
-                            else -> MaterialTheme.colorScheme.surfaceVariant
-                        },
-                        shape = RoundedCornerShape(4.dp)
-                    ) {
-                        Text(
-                            text = badge,
-                            style = MaterialTheme.typography.labelSmall.copy(
-                                fontSize = 9.sp,
-                                fontWeight = FontWeight.Bold
-                            ),
-                            color = when {
-                                item.isHuge -> Color(0xFFDC2626)
-                                item.isVeryLarge -> Color(0xFFC2410C)
-                                item.isLarge -> MiOrange
-                                else -> MaterialTheme.colorScheme.onSurfaceVariant
-                            },
-                            modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
-                        )
-                    }
-                }
-
-                Text(
-                    text = "•",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.outline.copy(alpha = 0.6f)
-                )
-                Text(
-                    text = item.formattedDate,
+                    text = item.formattedDateOnly,
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
+            } else {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Text(
+                        text = item.formattedSize,
+                        style = MaterialTheme.typography.bodySmall.copy(
+                            fontWeight = if (item.isLarge) FontWeight.Bold else FontWeight.Medium
+                        ),
+                        color = when {
+                            item.isHuge -> Color(0xFFDC2626)
+                            item.isVeryLarge -> Color(0xFFEA580C)
+                            item.isLarge -> MiOrange
+                            else -> MaterialTheme.colorScheme.onSurfaceVariant
+                        }
+                    )
+
+                    item.sizeBadgeText?.let { badge ->
+                        Surface(
+                            color = when {
+                                item.isHuge -> Color(0xFFFEE2E2)
+                                item.isVeryLarge -> Color(0xFFFFEDD5)
+                                item.isLarge -> MiOrange.copy(alpha = 0.14f)
+                                else -> MaterialTheme.colorScheme.surfaceVariant
+                            },
+                            shape = RoundedCornerShape(4.dp)
+                        ) {
+                            Text(
+                                text = badge,
+                                style = MaterialTheme.typography.labelSmall.copy(
+                                    fontSize = 9.sp,
+                                    fontWeight = FontWeight.Bold
+                                ),
+                                color = when {
+                                    item.isHuge -> Color(0xFFDC2626)
+                                    item.isVeryLarge -> Color(0xFFC2410C)
+                                    item.isLarge -> MiOrange
+                                    else -> MaterialTheme.colorScheme.onSurfaceVariant
+                                },
+                                modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                            )
+                        }
+                    }
+
+                    Text(
+                        text = "•",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.outline.copy(alpha = 0.6f)
+                    )
+                    Text(
+                        text = item.formattedDateOnly,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
             }
         }
 
@@ -214,28 +223,6 @@ fun MiFileRow(
                             .border(1.8.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.5f), CircleShape)
                     )
                 }
-            }
-        } else {
-            Box {
-                IconButton(
-                    onClick = { showMenu = true },
-                    modifier = Modifier.size(36.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.MoreVert,
-                        contentDescription = "Menu",
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.size(18.dp)
-                    )
-                }
-
-                FileActionDropdownMenu(
-                    expanded = showMenu,
-                    onDismiss = { showMenu = false },
-                    item = item,
-                    onClick = onClick,
-                    onMenuAction = onMenuAction
-                )
             }
         }
     }
@@ -462,28 +449,6 @@ fun MiFileGridItem(
                         )
                     }
                 }
-            } else {
-                Box(modifier = Modifier.align(Alignment.TopEnd)) {
-                    IconButton(
-                        onClick = { showMenu = true },
-                        modifier = Modifier.size(26.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.MoreVert,
-                            contentDescription = "Menu",
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
-                            modifier = Modifier.size(16.dp)
-                        )
-                    }
-
-                    FileActionDropdownMenu(
-                        expanded = showMenu,
-                        onDismiss = { showMenu = false },
-                        item = item,
-                        onClick = onClick,
-                        onMenuAction = onMenuAction
-                    )
-                }
             }
 
             Column(
@@ -521,9 +486,9 @@ fun MiFileGridItem(
 
                 Spacer(modifier = Modifier.height(2.dp))
 
-                // File size / item count
+                // Subtitle: Date for folders, size for files
                 Text(
-                    text = item.formattedSize,
+                    text = if (item.isDirectory) item.formattedDateOnly else item.formattedSize,
                     style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1

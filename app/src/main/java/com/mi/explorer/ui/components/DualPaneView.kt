@@ -297,7 +297,7 @@ fun SinglePaneContainer(
                             horizontalArrangement = Arrangement.spacedBy(4.dp)
                         ) {
                             Text(
-                                text = item.formattedSize,
+                                text = if (item.isDirectory) item.formattedDateOnly else item.formattedSize,
                                 style = MaterialTheme.typography.labelSmall.copy(
                                     fontWeight = if (item.isLarge) FontWeight.Bold else FontWeight.Normal
                                 ),

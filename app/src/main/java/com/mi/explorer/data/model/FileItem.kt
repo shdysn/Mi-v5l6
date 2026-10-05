@@ -184,6 +184,12 @@ data class FileItem(
             return sdf.format(Date(lastModified))
         }
 
+    val formattedDateOnly: String
+        get() {
+            val sdf = SimpleDateFormat("MMM dd, yyyy", Locale.getDefault())
+            return sdf.format(Date(lastModified))
+        }
+
     val timeGroup: String
         get() {
             val now = System.currentTimeMillis()
