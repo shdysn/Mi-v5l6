@@ -40,6 +40,8 @@ class FileRepository(private val context: Context) {
     companion object {
         @Volatile
         var cachedRootItems: List<FileItem>? = null
+        @Volatile
+        var cachedRecentItems: List<FileItem>? = null
     }
 
     val rootStorageDirectory: File
@@ -58,16 +60,19 @@ class FileRepository(private val context: Context) {
     fun getFastInitialRootItems(): List<FileItem> {
         cachedRootItems?.let { if (it.isNotEmpty()) return it }
         val root = rootStorageDirectory
-        return try {
+        val list = ArrayList<FileItem>()
+        val seenNames = HashSet<String>()
+
+        try {
             val files = root.listFiles()
             if (files != null && files.isNotEmpty()) {
-                val list = ArrayList<FileItem>(files.size)
                 for (file in files) {
                     val name = file.name
                     if (name.startsWith(".")) continue
                     val isDir = file.isDirectory
                     val dotIdx = name.lastIndexOf('.')
                     val ext = if (!isDir && dotIdx > 0) name.substring(dotIdx + 1).lowercase(java.util.Locale.ROOT) else ""
+                    seenNames.add(name.lowercase(java.util.Locale.ROOT))
                     list.add(
                         FileItem(
                             file = file,
@@ -82,15 +87,65 @@ class FileRepository(private val context: Context) {
                         )
                     )
                 }
-                val sorted = com.mi.explorer.data.model.sortFileList(list, SortType.NAME_ASC, foldersOnTop = true)
-                cachedRootItems = sorted
-                sorted
-            } else {
-                emptyList()
             }
         } catch (e: Exception) {
-            emptyList()
+            // ignore
         }
+
+        // If root listing is empty (e.g. storage permissions pending on cold start),
+        // provide instant default standard Android storage folders and sample files so the UI is NEVER empty!
+        if (list.isEmpty()) {
+            ensureMiExplorerSampleData()
+            val sampleBase = File(context.filesDir, "MiExplorer")
+            val sampleFiles = sampleBase.listFiles()
+            if (sampleFiles != null && sampleFiles.isNotEmpty()) {
+                for (file in sampleFiles) {
+                    val name = file.name
+                    if (name.startsWith(".")) continue
+                    val isDir = file.isDirectory
+                    val dotIdx = name.lastIndexOf('.')
+                    val ext = if (!isDir && dotIdx > 0) name.substring(dotIdx + 1).lowercase(java.util.Locale.ROOT) else ""
+                    seenNames.add(name.lowercase(java.util.Locale.ROOT))
+                    list.add(
+                        FileItem(
+                            file = file,
+                            name = name,
+                            path = file.absolutePath,
+                            isDirectory = isDir,
+                            size = if (isDir) 0L else file.length(),
+                            lastModified = file.lastModified(),
+                            isHidden = false,
+                            extension = ext,
+                            itemCount = 0
+                        )
+                    )
+                }
+            }
+
+            val defaultFolderNames = listOf("Download", "DCIM", "Documents", "Pictures", "Music", "Movies", "Android")
+            for (fName in defaultFolderNames) {
+                if (seenNames.add(fName.lowercase(java.util.Locale.ROOT))) {
+                    val virtualFolder = File(root, fName)
+                    list.add(
+                        FileItem(
+                            file = virtualFolder,
+                            name = fName,
+                            path = virtualFolder.absolutePath,
+                            isDirectory = true,
+                            size = 0L,
+                            lastModified = System.currentTimeMillis(),
+                            isHidden = false,
+                            extension = "",
+                            itemCount = 0
+                        )
+                    )
+                }
+            }
+        }
+
+        val sorted = com.mi.explorer.data.model.sortFileList(list, SortType.NAME_ASC, foldersOnTop = true)
+        cachedRootItems = sorted
+        return sorted
     }
 
     val downloadsDirectory: File
@@ -192,9 +247,7 @@ class FileRepository(private val context: Context) {
         }
 
     init {
-        kotlinx.coroutines.CoroutineScope(Dispatchers.IO).launch {
-            ensureMiExplorerSampleData()
-        }
+        ensureMiExplorerSampleData()
     }
 
     private fun ensureMiExplorerSampleData() {
@@ -391,6 +444,7 @@ class FileRepository(private val context: Context) {
     }
 
     suspend fun getRecentFiles(): List<FileItem> = withContext(Dispatchers.IO) {
+        cachedRecentItems?.let { if (it.isNotEmpty()) return@withContext it }
         val list = mutableListOf<FileItem>()
         val seenPaths = HashSet<String>()
 
@@ -411,8 +465,23 @@ class FileRepository(private val context: Context) {
                         val path = cursor.getString(dataCol)
                         if (!path.isNullOrEmpty() && seenPaths.add(path)) {
                             val f = File(path)
-                            if (f.exists() && !f.isDirectory && !f.name.startsWith(".")) {
-                                list.add(FileItem(f))
+                            val name = f.name
+                            if (f.exists() && !f.isDirectory && !name.startsWith(".")) {
+                                val dotIdx = name.lastIndexOf('.')
+                                val ext = if (dotIdx > 0) name.substring(dotIdx + 1).lowercase(java.util.Locale.ROOT) else ""
+                                list.add(
+                                    FileItem(
+                                        file = f,
+                                        name = name,
+                                        path = f.absolutePath,
+                                        isDirectory = false,
+                                        size = f.length(),
+                                        lastModified = f.lastModified(),
+                                        isHidden = false,
+                                        extension = ext,
+                                        itemCount = 0
+                                    )
+                                )
                             }
                         }
                     }
@@ -434,14 +503,31 @@ class FileRepository(private val context: Context) {
 
             for (dir in keyDirs) {
                 dir.listFiles()?.forEach { f ->
-                    if (!f.isDirectory && !f.name.startsWith(".") && seenPaths.add(f.absolutePath)) {
-                        list.add(FileItem(f))
+                    val name = f.name
+                    if (!f.isDirectory && !name.startsWith(".") && seenPaths.add(f.absolutePath)) {
+                        val dotIdx = name.lastIndexOf('.')
+                        val ext = if (dotIdx > 0) name.substring(dotIdx + 1).lowercase(java.util.Locale.ROOT) else ""
+                        list.add(
+                            FileItem(
+                                file = f,
+                                name = name,
+                                path = f.absolutePath,
+                                isDirectory = false,
+                                size = f.length(),
+                                lastModified = f.lastModified(),
+                                isHidden = false,
+                                extension = ext,
+                                itemCount = 0
+                            )
+                        )
                     }
                 }
             }
         }
 
-        list.sortedByDescending { it.lastModified }.take(60)
+        val sorted = list.sortedByDescending { it.lastModified }.take(60)
+        cachedRecentItems = sorted
+        sorted
     }
 
     suspend fun getCategoryFiles(category: FileCategory): List<FileItem> = withContext(Dispatchers.IO) {

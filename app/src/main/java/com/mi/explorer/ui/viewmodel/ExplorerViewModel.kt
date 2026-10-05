@@ -494,7 +494,7 @@ class ExplorerViewModel(application: Application) : AndroidViewModel(application
                 current.backStack
             }
 
-            if (!hasItems) {
+            if (current.items.isEmpty()) {
                 _storageState.update {
                     it.copy(
                         currentDir = dir,
