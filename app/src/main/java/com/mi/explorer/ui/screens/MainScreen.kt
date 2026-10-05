@@ -70,6 +70,8 @@ fun MainScreen(
 
     var isSearchActive by remember { mutableStateOf(false) }
     var recentFilter by remember { mutableStateOf("All") }
+    var showToolsSheet by remember { mutableStateOf(false) }
+    var showFavoritesSheet by remember { mutableStateOf(false) }
 
     // Dialog states
     var showCreateFolderDialog by remember { mutableStateOf(false) }
@@ -165,7 +167,10 @@ fun MainScreen(
                     onDualPaneToggle = { viewModel.toggleDualPane() },
                     isDualPaneActive = isDualPaneActive,
                     onAmoledToggle = { viewModel.toggleAmoledMode() },
-                    isAmoled = isAmoled
+                    isAmoled = isAmoled,
+                    onToolsClick = { showToolsSheet = true },
+                    onStatusSaverClick = { viewModel.openStatusSaver() },
+                    onFavoritesClick = { showFavoritesSheet = true }
                 )
             }
         },
@@ -403,6 +408,8 @@ fun MainScreen(
                         onFastShareClick = { viewModel.openFastShare() },
                         onFtpClick = { viewModel.openFtpServer() },
                         onDualPaneToggle = { viewModel.toggleDualPane() },
+                        onToolsClick = { showToolsSheet = true },
+                        onFavoritesClick = { showFavoritesSheet = true },
                         onCategoryClick = { cat, title ->
                             if (cat == FileCategory.APK) {
                                 viewModel.openAppInstaller()
@@ -820,6 +827,271 @@ fun MainScreen(
             }
         )
     }
+
+    if (showToolsSheet) {
+        MiToolsBottomSheet(
+            onDismiss = { showToolsSheet = false },
+            onVaultClick = { viewModel.openVault() },
+            onFastShareClick = { viewModel.openFastShare() },
+            onNetworkDrivesClick = { viewModel.openNetworkDrives() },
+            onTrashClick = { viewModel.openTrash() },
+            onAnalyzerClick = { viewModel.openStorageAnalyzer() },
+            onDuplicatesClick = { viewModel.openDuplicateFinder() },
+            onCleanerClick = { viewModel.openCleaner() },
+            onAppManagerClick = { viewModel.openAppManager() },
+            onAppInstallerClick = { viewModel.openAppInstaller() },
+            onRootBrowserClick = { viewModel.openRootBrowser() },
+            onFtpClick = { viewModel.openFtpServer() },
+            onDualPaneToggle = { viewModel.toggleDualPane() },
+            isDualPaneActive = isDualPaneActive,
+            onSocialClick = { viewModel.openSocialHub() },
+            onPinWidgetClick = {
+                val ok = com.mi.explorer.utils.ShortcutHelper.requestPinStorageWidget(context)
+                viewModel.showMessage(if (ok) "Home Screen Storage Widget prompt opened!" else "Long-press Home Screen -> Widgets -> Mi Explorer")
+            },
+            onWebShareClick = { viewModel.openWebShare() },
+            onStatusSaverClick = { viewModel.openStatusSaver() },
+            onFileShredderClick = { viewModel.openFileShredder() },
+            onSmartCollectionsClick = { viewModel.openSmartCollections() },
+            onTimeMachineClick = { viewModel.openTimeMachine() }
+        )
+    }
+
+    if (showFavoritesSheet) {
+        FavoritesBottomSheet(
+            favorites = favorites,
+            onDismiss = { showFavoritesSheet = false },
+            onNavigateTo = { file ->
+                viewModel.selectTab(MiTab.STORAGE)
+                viewModel.loadDirectory(file, addToHistory = true)
+            },
+            onOpenFile = { fileItem ->
+                if (!viewModel.openFileSmart(fileItem, emptyList())) {
+                    openWithTarget = fileItem
+                }
+            },
+            onRemoveFavorite = { file ->
+                viewModel.toggleFavorite(file)
+            },
+            currentFolder = storageState.currentDir,
+            onAddCurrentToFavorites = {
+                viewModel.toggleFavorite(storageState.currentDir)
+            }
+        )
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun FavoritesBottomSheet(
+    favorites: List<FavoriteItem>,
+    onDismiss: () -> Unit,
+    onNavigateTo: (File) -> Unit,
+    onOpenFile: (FileItem) -> Unit,
+    onRemoveFavorite: (File) -> Unit,
+    currentFolder: File? = null,
+    onAddCurrentToFavorites: (() -> Unit)? = null
+) {
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
+        containerColor = MaterialTheme.colorScheme.surface
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 20.dp)
+                .padding(bottom = 32.dp)
+                .testTag("favorites_bottom_sheet")
+        ) {
+            // Header
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Box(
+                        modifier = Modifier
+                            .size(36.dp)
+                            .clip(RoundedCornerShape(10.dp))
+                            .background(Color(0xFFF59E0B).copy(alpha = 0.15f)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Star,
+                            contentDescription = null,
+                            tint = Color(0xFFF59E0B),
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+                    Spacer(modifier = Modifier.width(10.dp))
+                    Column {
+                        Text(
+                            text = "Favourites",
+                            style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Text(
+                            text = if (favorites.isEmpty()) "Quick access to starred files & folders" else "${favorites.size} saved items",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+                IconButton(onClick = onDismiss) {
+                    Icon(Icons.Default.Close, contentDescription = "Close")
+                }
+            }
+
+            // Quick action: Star current folder if available
+            if (currentFolder != null && onAddCurrentToFavorites != null) {
+                val isAlreadyFavorite = favorites.any { it.path == currentFolder.absolutePath }
+                if (!isAlreadyFavorite) {
+                    Surface(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(bottom = 12.dp)
+                            .clip(RoundedCornerShape(12.dp))
+                            .clickable { onAddCurrentToFavorites() },
+                        color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f)
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.StarOutline,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = "Star current folder (${currentFolder.name})",
+                                style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Medium),
+                                color = MaterialTheme.colorScheme.onPrimaryContainer
+                            )
+                        }
+                    }
+                }
+            }
+
+            if (favorites.isEmpty()) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 40.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Icon(
+                            imageVector = Icons.Default.StarBorder,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.outline,
+                            modifier = Modifier.size(56.dp)
+                        )
+                        Spacer(modifier = Modifier.height(12.dp))
+                        Text(
+                            text = "No favourites yet",
+                            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = "Star any file or folder from its menu to access it here anytime.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(horizontal = 24.dp),
+                            lineHeight = 18.sp
+                        )
+                    }
+                }
+            } else {
+                LazyColumn(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = 420.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    items(favorites, key = { it.path }) { fav ->
+                        val isDir = fav.isDirectory
+                        val iconVector = if (isDir) Icons.Default.Folder else Icons.Default.InsertDriveFile
+                        val iconColor = if (isDir) Color(0xFFFFB300) else Color(0xFF2563EB)
+
+                        Surface(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(14.dp))
+                                .clickable {
+                                    onDismiss()
+                                    if (isDir) {
+                                        onNavigateTo(fav.file)
+                                    } else {
+                                        onOpenFile(FileItem(fav.file))
+                                    }
+                                },
+                            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                            tonalElevation = 1.dp
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 12.dp, vertical = 10.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(38.dp)
+                                        .clip(RoundedCornerShape(10.dp))
+                                        .background(iconColor.copy(alpha = 0.15f)),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(
+                                        imageVector = iconVector,
+                                        contentDescription = null,
+                                        tint = iconColor,
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                }
+
+                                Spacer(modifier = Modifier.width(12.dp))
+
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = fav.name,
+                                        style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
+                                        maxLines = 1,
+                                        color = MaterialTheme.colorScheme.onSurface
+                                    )
+                                    Text(
+                                        text = fav.path,
+                                        style = MaterialTheme.typography.bodySmall.copy(fontSize = 11.sp),
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        maxLines = 1
+                                    )
+                                }
+
+                                IconButton(
+                                    onClick = { onRemoveFavorite(fav.file) },
+                                    modifier = Modifier.size(32.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Star,
+                                        contentDescription = "Remove from favourites",
+                                        tint = Color(0xFFF59E0B),
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
 }
 
 @Composable
@@ -1109,6 +1381,8 @@ fun StorageTabContent(
     onFastShareClick: () -> Unit = {},
     onFtpClick: () -> Unit = {},
     onDualPaneToggle: () -> Unit = {},
+    onToolsClick: () -> Unit = {},
+    onFavoritesClick: () -> Unit = {},
     onCategoryClick: (FileCategory, String) -> Unit,
     onSocialClick: () -> Unit = {},
     onAppManagerClick: () -> Unit,
@@ -1164,8 +1438,6 @@ fun StorageTabContent(
     }
 
     val isRoot = storageState.currentDir == rootStorageDir
-    var showToolsSheet by remember { mutableStateOf(false) }
-    var isUtilitiesMenuExpanded by remember { mutableStateOf(false) }
 
     LazyColumn(
         modifier = Modifier
@@ -1187,184 +1459,17 @@ fun StorageTabContent(
                 )
             }
 
-            // 2. 8-tile MIUI Category Grid (with "Tools" tile triggering the full sheet)
+            // 2. 12-tile MIUI Category Grid (with Media, Status Saver, Favourites, Cleaner, and Utilities)
             item {
                 CategoryGrid(
                     onCategoryClick = onCategoryClick,
-                    onToolsClick = { showToolsSheet = true },
+                    onToolsClick = onToolsClick,
                     onSocialClick = onSocialClick,
+                    onStatusSaverClick = onStatusSaverClick,
+                    onFavoritesClick = onFavoritesClick,
+                    onCleanerClick = onCleanClick,
                     modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
                 )
-            }
-
-            // 3. Signature MIUI Utilities Carousel (4 visible, rest in dropdown menu)
-            item {
-                val utilitiesList = remember(
-                    onPinWidgetClick, onAppInstallerClick, onStatusSaverClick,
-                    onWebShareClick, onSmartCollectionsClick, onTimeMachineClick,
-                    onFileShredderClick, onVaultClick, onFastShareClick,
-                    onAppManagerClick, onNetworkDrivesClick, onTrashClick,
-                    onAnalyzerClick, onDuplicatesClick, onFtpClick
-                ) {
-                    listOf(
-                        Triple("Home Widget", "Pin Storage Card", Icons.Default.Widgets to Color(0xFF0EA5E9)) to onPinWidgetClick,
-                        Triple("APKs", "Install APK files", Icons.Default.InstallMobile to Color(0xFF059669)) to onAppInstallerClick,
-                        Triple("Status Saver", "WhatsApp Status", Icons.Default.BookmarkAdded to Color(0xFF10B981)) to onStatusSaverClick,
-                        Triple("PC Web Portal", "Send & Receive", Icons.Default.Language to Color(0xFF2563EB)) to onWebShareClick,
-                        Triple("Smart Hubs", "Auto Collections", Icons.Default.AutoAwesomeMosaic to Color(0xFF8B5CF6)) to onSmartCollectionsClick,
-                        Triple("Time Machine", "On This Day", Icons.Default.History to Color(0xFFF59E0B)) to onTimeMachineClick,
-                        Triple("File Shredder", "DoD 3-Pass Wipe", Icons.Default.EnhancedEncryption to Color(0xFFEF4444)) to onFileShredderClick,
-                        Triple("Private Vault", "Fingerprint safe", Icons.Default.Lock to MiOrange) to onVaultClick,
-                        Triple("Mi Fast Share", "Direct Wi-Fi", Icons.Default.WifiTethering to Color(0xFF10B981)) to onFastShareClick,
-                        Triple("APK Cloner & Hub", "Backup & Rollback", Icons.Default.Android to Color(0xFF8B5CF6)) to onAppManagerClick,
-                        Triple("Cloud Drives", "SMB / WebDAV", Icons.Default.CloudQueue to Color(0xFF0EA5E9)) to onNetworkDrivesClick,
-                        Triple("Recycle Bin", "30d auto-purge", Icons.Default.DeleteOutline to Color(0xFFEF4444)) to onTrashClick,
-                        Triple("Analyzer", "Storage map", Icons.Default.PieChart to Color(0xFF3B82F6)) to onAnalyzerClick,
-                        Triple("Duplicates", "Clean redundant", Icons.Default.ContentCopy to Color(0xFF14B8A6)) to onDuplicatesClick,
-                        Triple("Transfer to PC", "FTP server", Icons.Default.Wifi to Color(0xFF6366F1)) to onFtpClick
-                    )
-                }
-
-                val visibleUtilities = remember(utilitiesList) { utilitiesList.take(4) }
-                val dropdownUtilities = remember(utilitiesList) { utilitiesList.drop(4) }
-
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(top = 4.dp, bottom = 4.dp)
-                ) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 16.dp, vertical = 4.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Text(
-                            text = "Utilities",
-                            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
-
-                        // More ▼ Dropdown Button (matching Screenshot 2 from MIUI)
-                        Box {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                modifier = Modifier
-                                    .clip(RoundedCornerShape(8.dp))
-                                    .clickable { isUtilitiesMenuExpanded = true }
-                                    .padding(horizontal = 8.dp, vertical = 4.dp)
-                            ) {
-                                Text(
-                                    text = "More",
-                                    style = MaterialTheme.typography.bodyMedium.copy(
-                                        fontWeight = FontWeight.Medium,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
-                                )
-                                Spacer(modifier = Modifier.width(2.dp))
-                                Icon(
-                                    imageVector = Icons.Default.ArrowDropDown,
-                                    contentDescription = "More utilities",
-                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    modifier = Modifier.size(20.dp)
-                                )
-                            }
-
-                            DropdownMenu(
-                                expanded = isUtilitiesMenuExpanded,
-                                onDismissRequest = { isUtilitiesMenuExpanded = false },
-                                modifier = Modifier.widthIn(min = 230.dp, max = 290.dp)
-                            ) {
-                                dropdownUtilities.forEach { (meta, onClick) ->
-                                    DropdownMenuItem(
-                                        text = {
-                                            Column {
-                                                Text(
-                                                    text = meta.first,
-                                                    style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold)
-                                                )
-                                                Text(
-                                                    text = meta.second,
-                                                    style = MaterialTheme.typography.bodySmall,
-                                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                                )
-                                            }
-                                        },
-                                        leadingIcon = {
-                                            Box(
-                                                modifier = Modifier
-                                                    .size(32.dp)
-                                                    .clip(RoundedCornerShape(8.dp))
-                                                    .background(meta.third.second.copy(alpha = 0.15f)),
-                                                contentAlignment = Alignment.Center
-                                            ) {
-                                                Icon(
-                                                    imageVector = meta.third.first,
-                                                    contentDescription = null,
-                                                    tint = meta.third.second,
-                                                    modifier = Modifier.size(18.dp)
-                                                )
-                                            }
-                                        },
-                                        onClick = {
-                                            isUtilitiesMenuExpanded = false
-                                            onClick()
-                                        }
-                                    )
-                                }
-                            }
-                        }
-                    }
-
-                    // 4 Visible Utilities on Screen
-                    LazyRow(
-                        modifier = Modifier.fillMaxWidth(),
-                        contentPadding = PaddingValues(horizontal = 16.dp),
-                        horizontalArrangement = Arrangement.spacedBy(10.dp)
-                    ) {
-                        items(visibleUtilities, key = { it.first.first }) { (meta, onClick) ->
-                            UtilityCard(
-                                title = meta.first,
-                                subtitle = meta.second,
-                                icon = meta.third.first,
-                                color = meta.third.second,
-                                onClick = onClick
-                            )
-                        }
-                    }
-
-                    // Centered "More ▼" button below the 4 items (exact match with Screenshot 2)
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(top = 8.dp),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(12.dp))
-                                .clickable { isUtilitiesMenuExpanded = true }
-                                .padding(horizontal = 16.dp, vertical = 6.dp)
-                        ) {
-                            Text(
-                                text = "More",
-                                style = MaterialTheme.typography.bodyMedium.copy(
-                                    fontWeight = FontWeight.Medium,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            )
-                            Spacer(modifier = Modifier.width(3.dp))
-                            Icon(
-                                imageVector = Icons.Default.ArrowDropDown,
-                                contentDescription = "More",
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.size(20.dp)
-                            )
-                        }
-                    }
-                }
             }
 
             // Favorites & Pinned Folders Bar
@@ -1761,31 +1866,6 @@ fun StorageTabContent(
         }
     }
 
-    if (showToolsSheet) {
-        MiToolsBottomSheet(
-            onDismiss = { showToolsSheet = false },
-            onVaultClick = onVaultClick,
-            onFastShareClick = onFastShareClick,
-            onNetworkDrivesClick = onNetworkDrivesClick,
-            onTrashClick = onTrashClick,
-            onAnalyzerClick = onAnalyzerClick,
-            onDuplicatesClick = onDuplicatesClick,
-            onCleanerClick = onCleanClick,
-            onAppManagerClick = onAppManagerClick,
-            onAppInstallerClick = onAppInstallerClick,
-            onRootBrowserClick = onRootBrowserClick,
-            onFtpClick = onFtpClick,
-            onDualPaneToggle = onDualPaneToggle,
-            isDualPaneActive = isDualPaneActive,
-            onSocialClick = onSocialClick,
-            onPinWidgetClick = onPinWidgetClick,
-            onWebShareClick = onWebShareClick,
-            onStatusSaverClick = onStatusSaverClick,
-            onFileShredderClick = onFileShredderClick,
-            onSmartCollectionsClick = onSmartCollectionsClick,
-            onTimeMachineClick = onTimeMachineClick
-        )
-    }
 }
 
 fun handleOpenFile(

@@ -27,9 +27,12 @@ data class MiCategory(
     val icon: ImageVector,
     val iconColor: Color,
     val bgColor: Color,
-    val category: FileCategory?,
+    val category: FileCategory? = null,
     val isTools: Boolean = false,
-    val isSocial: Boolean = false
+    val isSocial: Boolean = false,
+    val isStatusSaver: Boolean = false,
+    val isFavorites: Boolean = false,
+    val isCleaner: Boolean = false
 )
 
 private val categoryRow1 = listOf(
@@ -43,60 +46,60 @@ private val categoryRow2 = listOf(
     MiCategory("APKs", Icons.Default.InstallMobile, Color.White, MiGreen, FileCategory.APK),
     MiCategory("Downloads", Icons.Default.Download, Color.White, MiCyan, null),
     MiCategory("Archives", Icons.Default.FolderZip, Color.White, MiAmber, FileCategory.ARCHIVE),
-    MiCategory("Social", Icons.Default.Chat, Color.White, Color(0xFF25D366), null, isSocial = true)
+    MiCategory("Status Saver", Icons.Default.BookmarkAdded, Color.White, Color(0xFF10B981), null, isStatusSaver = true)
+)
+
+private val categoryRow3 = listOf(
+    MiCategory("Favourites", Icons.Default.Star, Color.White, Color(0xFFF59E0B), null, isFavorites = true),
+    MiCategory("Social", Icons.Default.Chat, Color.White, Color(0xFF25D366), null, isSocial = true),
+    MiCategory("Cleaner", Icons.Default.CleaningServices, Color.White, Color(0xFF0EA5E9), null, isCleaner = true),
+    MiCategory("Utilities", Icons.Default.Widgets, Color.White, Color(0xFF8B5CF6), null, isTools = true)
 )
 
 /**
- * Compact, modern 4x2 Category Grid inspired by Xiaomi MIUI / HyperOS and Google Files.
- * Uses a balanced 4-column layout that cuts vertical screen consumption in half,
- * allowing immediate visibility of recent files and folder contents.
+ * Modern 4x3 Category Grid inspired by Xiaomi MIUI / HyperOS and Google Files.
+ * Includes media categories, Status Saver, Favourites, Cleaner, and Utilities.
  */
 @Composable
 fun CategoryGrid(
     onCategoryClick: (FileCategory, String) -> Unit,
     onToolsClick: () -> Unit,
     onSocialClick: () -> Unit,
+    onStatusSaverClick: () -> Unit = {},
+    onFavoritesClick: () -> Unit = {},
+    onCleanerClick: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
-    val row1 = categoryRow1
-    val row2 = categoryRow2
+    val rows = listOf(categoryRow1, categoryRow2, categoryRow3)
 
     Column(
         modifier = modifier
             .fillMaxWidth()
-            .testTag("mi_category_grid")
+            .testTag("mi_category_grid"),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
-        // Row 1: Images, Videos, Music, Docs
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween
-        ) {
-            row1.forEach { cat ->
-                CategoryTile(
-                    category = cat,
-                    onClick = {
-                        handleCategoryClick(cat, onToolsClick, onSocialClick, onCategoryClick)
-                    },
-                    modifier = Modifier.weight(1f)
-                )
-            }
-        }
-
-        Spacer(modifier = Modifier.height(8.dp))
-
-        // Row 2: APKs, Downloads, Archives, Social
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween
-        ) {
-            row2.forEach { cat ->
-                CategoryTile(
-                    category = cat,
-                    onClick = {
-                        handleCategoryClick(cat, onToolsClick, onSocialClick, onCategoryClick)
-                    },
-                    modifier = Modifier.weight(1f)
-                )
+        rows.forEach { row ->
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                row.forEach { cat ->
+                    CategoryTile(
+                        category = cat,
+                        onClick = {
+                            handleCategoryClick(
+                                cat = cat,
+                                onToolsClick = onToolsClick,
+                                onSocialClick = onSocialClick,
+                                onStatusSaverClick = onStatusSaverClick,
+                                onFavoritesClick = onFavoritesClick,
+                                onCleanerClick = onCleanerClick,
+                                onCategoryClick = onCategoryClick
+                            )
+                        },
+                        modifier = Modifier.weight(1f)
+                    )
+                }
             }
         }
     }
@@ -106,16 +109,19 @@ private fun handleCategoryClick(
     cat: MiCategory,
     onToolsClick: () -> Unit,
     onSocialClick: () -> Unit,
+    onStatusSaverClick: () -> Unit,
+    onFavoritesClick: () -> Unit,
+    onCleanerClick: () -> Unit,
     onCategoryClick: (FileCategory, String) -> Unit
 ) {
-    if (cat.isTools) {
-        onToolsClick()
-    } else if (cat.isSocial) {
-        onSocialClick()
-    } else if (cat.category != null) {
-        onCategoryClick(cat.category, cat.title)
-    } else if (cat.title == "Downloads") {
-        onCategoryClick(FileCategory.UNKNOWN, "Downloads")
+    when {
+        cat.isTools -> onToolsClick()
+        cat.isSocial -> onSocialClick()
+        cat.isStatusSaver -> onStatusSaverClick()
+        cat.isFavorites -> onFavoritesClick()
+        cat.isCleaner -> onCleanerClick()
+        cat.category != null -> onCategoryClick(cat.category, cat.title)
+        cat.title == "Downloads" -> onCategoryClick(FileCategory.UNKNOWN, "Downloads")
     }
 }
 

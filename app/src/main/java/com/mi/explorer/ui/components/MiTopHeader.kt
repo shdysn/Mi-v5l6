@@ -42,6 +42,9 @@ fun MiTopHeader(
     isDualPaneActive: Boolean = false,
     onAmoledToggle: () -> Unit = {},
     isAmoled: Boolean = false,
+    onToolsClick: () -> Unit = {},
+    onStatusSaverClick: () -> Unit = {},
+    onFavoritesClick: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     var showMoreMenu by remember { mutableStateOf(false) }
@@ -126,6 +129,31 @@ fun MiTopHeader(
                         expanded = showMoreMenu,
                         onDismissRequest = { showMoreMenu = false }
                     ) {
+                        DropdownMenuItem(
+                            text = { Text("Tools & Utilities") },
+                            leadingIcon = { Icon(Icons.Default.Widgets, contentDescription = null, tint = Color(0xFF8B5CF6)) },
+                            onClick = {
+                                showMoreMenu = false
+                                onToolsClick()
+                            }
+                        )
+                        DropdownMenuItem(
+                            text = { Text("Status Saver") },
+                            leadingIcon = { Icon(Icons.Default.BookmarkAdded, contentDescription = null, tint = Color(0xFF10B981)) },
+                            onClick = {
+                                showMoreMenu = false
+                                onStatusSaverClick()
+                            }
+                        )
+                        DropdownMenuItem(
+                            text = { Text("Favourites") },
+                            leadingIcon = { Icon(Icons.Default.Star, contentDescription = null, tint = Color(0xFFF59E0B)) },
+                            onClick = {
+                                showMoreMenu = false
+                                onFavoritesClick()
+                            }
+                        )
+                        HorizontalDivider()
                         DropdownMenuItem(
                             text = { Text("Deep Cleaner") },
                             leadingIcon = { Icon(Icons.Default.CleaningServices, contentDescription = null, tint = MiOrange) },
