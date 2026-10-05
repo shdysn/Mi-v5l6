@@ -73,11 +73,13 @@ fun MiFileRow(
             .testTag("mi_file_row_${item.name}"),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        // MIUI Squircle icon badge with Material Icon and format chip
+        val isMedia = item.category == FileCategory.IMAGE || item.category == FileCategory.VIDEO
+        // MIUI Squircle icon badge with Material Icon and format chip (larger for images & videos)
         FileIconHelper.FileIconBadge(
             item = item,
-            size = 44.dp,
-            iconSize = 24.dp
+            size = if (isMedia) 54.dp else 44.dp,
+            iconSize = if (isMedia) 28.dp else 24.dp,
+            shape = RoundedCornerShape(if (isMedia) 10.dp else 14.dp)
         )
 
         Spacer(modifier = Modifier.width(14.dp))
@@ -457,12 +459,13 @@ fun MiFileGridItem(
                     .padding(top = if (isSelectionMode) 14.dp else 6.dp, bottom = 4.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                // Centered Squircle Badge with format chip
+                val isMedia = item.category == FileCategory.IMAGE || item.category == FileCategory.VIDEO
+                // Centered Squircle Badge with format chip (enlarged for photos & videos)
                 FileIconHelper.FileIconBadge(
                     item = item,
-                    size = 50.dp,
-                    iconSize = 28.dp,
-                    shape = RoundedCornerShape(16.dp)
+                    size = if (isMedia) 74.dp else 52.dp,
+                    iconSize = if (isMedia) 34.dp else 28.dp,
+                    shape = RoundedCornerShape(if (isMedia) 12.dp else 16.dp)
                 )
 
                 Spacer(modifier = Modifier.height(8.dp))

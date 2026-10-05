@@ -471,7 +471,24 @@ class FileRepository(private val context: Context) {
         sorted
     }
 
-    suspend fun getCategoryFiles(category: FileCategory): List<FileItem> = withContext(Dispatchers.IO) {
+    private val categoryCache = java.util.concurrent.ConcurrentHashMap<FileCategory, List<FileItem>>()
+
+    fun getCachedCategory(category: FileCategory): List<FileItem>? = categoryCache[category]
+
+    fun invalidateCategoryCache(category: FileCategory? = null) {
+        if (category == null) {
+            categoryCache.clear()
+        } else {
+            categoryCache.remove(category)
+        }
+    }
+
+    suspend fun getCategoryFiles(category: FileCategory, forceRefresh: Boolean = false): List<FileItem> = withContext(Dispatchers.IO) {
+        if (!forceRefresh) {
+            categoryCache[category]?.let {
+                if (it.isNotEmpty()) return@withContext it
+            }
+        }
         val list = mutableListOf<FileItem>()
         val seenPaths = HashSet<String>()
 
@@ -632,12 +649,15 @@ class FileRepository(private val context: Context) {
 
         val searchFolders = baseSearchFolders.filter { it.exists() && it.canRead() }.distinctBy { it.absolutePath }
 
+        val scanDepth = if (list.isNotEmpty()) 1 else 2
         for (dir in searchFolders) {
-            scanCategoryFast(dir, category, list, seenPaths, maxDepth = 4, maxResults = 2500)
-            if (list.size >= 2500) break
+            scanCategoryFast(dir, category, list, seenPaths, maxDepth = scanDepth, maxResults = 1500)
+            if (list.size >= 1500) break
         }
 
-        list.sortedByDescending { it.lastModified }
+        val sorted = list.sortedByDescending { it.lastModified }
+        categoryCache[category] = sorted
+        sorted
     }
 
     private fun scanCategoryFast(

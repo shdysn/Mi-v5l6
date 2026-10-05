@@ -64,7 +64,9 @@ fun AppInstallerScreen(
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_RESUME) {
-                viewModel.loadStorageApks()
+                if (storageApks.isEmpty()) {
+                    viewModel.loadStorageApks()
+                }
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)

@@ -10,6 +10,8 @@ import android.graphics.Paint
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -112,6 +114,30 @@ fun ImageViewerScreen(
     }
 
     var reloadTrigger by remember { mutableIntStateOf(0) }
+
+    val images = state.imageList
+    val pageCount = images.size.coerceAtLeast(1)
+    val initialPage = remember(images) {
+        state.currentIndex.coerceIn(0, (pageCount - 1).coerceAtLeast(0))
+    }
+    val pagerState = rememberPagerState(
+        initialPage = initialPage,
+        pageCount = { pageCount }
+    )
+
+    // Sync pager swipe with viewModel
+    LaunchedEffect(pagerState.currentPage) {
+        if (images.isNotEmpty() && pagerState.currentPage in images.indices && pagerState.currentPage != state.currentIndex) {
+            viewModel.setImageIndex(pagerState.currentPage)
+        }
+    }
+
+    // Sync external index changes with pager
+    LaunchedEffect(state.currentIndex) {
+        if (state.currentIndex in 0 until pageCount && pagerState.currentPage != state.currentIndex) {
+            pagerState.scrollToPage(state.currentIndex)
+        }
+    }
 
     // Reset edits when switching image
     LaunchedEffect(state.currentFile?.absolutePath) {
@@ -427,51 +453,6 @@ fun ImageViewerScreen(
                     }
                 }
 
-                // Prev / Next Bar
-                if (state.imageList.size > 1) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 12.dp, vertical = 10.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Button(
-                            onClick = { viewModel.prevImage() },
-                            enabled = state.currentIndex > 0,
-                            colors = ButtonDefaults.buttonColors(containerColor = MiOrange, contentColor = Color.White),
-                            shape = RoundedCornerShape(14.dp),
-                            modifier = Modifier.testTag("prev_image_button")
-                        ) {
-                            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = null)
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text("Previous")
-                        }
-
-                        if (zoomScale > 1.05f) {
-                            OutlinedButton(
-                                onClick = {
-                                    zoomScale = 1f
-                                    panOffset = Offset.Zero
-                                }
-                            ) {
-                                Text("${(zoomScale * 100).roundToInt()}% Reset")
-                            }
-                        }
-
-                        Button(
-                            onClick = { viewModel.nextImage() },
-                            enabled = state.currentIndex < state.imageList.size - 1,
-                            colors = ButtonDefaults.buttonColors(containerColor = MiOrange, contentColor = Color.White),
-                            shape = RoundedCornerShape(14.dp),
-                            modifier = Modifier.testTag("next_image_button")
-                        ) {
-                            Text("Next")
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Icon(Icons.AutoMirrored.Filled.ArrowForward, contentDescription = null)
-                        }
-                    }
-                }
             }
         }
     ) { innerPadding ->
@@ -479,47 +460,120 @@ fun ImageViewerScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(innerPadding)
-                .background(Color.Black)
-                .transformable(state = transformState)
-                .pointerInput(Unit) {
-                    detectTapGestures(
-                        onDoubleTap = {
-                            if (zoomScale > 1.1f) {
-                                zoomScale = 1f
-                                panOffset = Offset.Zero
-                            } else {
-                                zoomScale = 2.25f
-                            }
-                        }
-                    )
-                },
+                .background(Color.Black),
             contentAlignment = Alignment.Center
         ) {
-            if (bitmap != null) {
-                val cropModifier = selectedCropRatio.ratio?.let { ratio ->
-                    Modifier.aspectRatio(ratio, matchHeightConstraintsFirst = ratio < 1f)
-                } ?: Modifier.fillMaxSize()
+            HorizontalPager(
+                state = pagerState,
+                userScrollEnabled = zoomScale <= 1.05f,
+                modifier = Modifier.fillMaxSize()
+            ) { page ->
+                val pageItem = images.getOrNull(page)
+                val pageFile = pageItem?.file ?: state.currentFile
+                val isCurrent = page == pagerState.currentPage
 
-                Image(
-                    bitmap = bitmap.asImageBitmap(),
-                    contentDescription = state.currentFile?.name,
-                    colorFilter = ColorFilter.colorMatrix(composeColorMatrix),
-                    modifier = cropModifier
-                        .graphicsLayer(
-                            scaleX = zoomScale * (if (flipHorizontal) -1f else 1f),
-                            scaleY = zoomScale * (if (flipVertical) -1f else 1f),
-                            rotationZ = rotationDegrees,
-                            translationX = panOffset.x,
-                            translationY = panOffset.y
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .then(
+                            if (isCurrent) {
+                                Modifier
+                                    .transformable(state = transformState)
+                                    .pointerInput(Unit) {
+                                        detectTapGestures(
+                                            onDoubleTap = {
+                                                if (zoomScale > 1.1f) {
+                                                    zoomScale = 1f
+                                                    panOffset = Offset.Zero
+                                                } else {
+                                                    zoomScale = 2.25f
+                                                }
+                                            }
+                                        )
+                                    }
+                            } else {
+                                Modifier
+                            }
                         ),
-                    contentScale = if (selectedCropRatio.ratio != null) ContentScale.Crop else ContentScale.Fit
-                )
-            } else {
-                Text(
-                    text = "Unable to load preview",
-                    style = MaterialTheme.typography.bodyLarge,
-                    color = Color.White
-                )
+                    contentAlignment = Alignment.Center
+                ) {
+                    if (isCurrent && bitmap != null) {
+                        val cropModifier = selectedCropRatio.ratio?.let { ratio ->
+                            Modifier.aspectRatio(ratio, matchHeightConstraintsFirst = ratio < 1f)
+                        } ?: Modifier.fillMaxSize()
+
+                        Image(
+                            bitmap = bitmap.asImageBitmap(),
+                            contentDescription = pageFile?.name,
+                            colorFilter = ColorFilter.colorMatrix(composeColorMatrix),
+                            modifier = cropModifier
+                                .graphicsLayer(
+                                    scaleX = zoomScale * (if (flipHorizontal) -1f else 1f),
+                                    scaleY = zoomScale * (if (flipVertical) -1f else 1f),
+                                    rotationZ = rotationDegrees,
+                                    translationX = panOffset.x,
+                                    translationY = panOffset.y
+                                ),
+                            contentScale = if (selectedCropRatio.ratio != null) ContentScale.Crop else ContentScale.Fit
+                        )
+                    } else if (pageFile != null) {
+                        val pageBmp = remember(pageFile.absolutePath) {
+                            try {
+                                val opts = BitmapFactory.Options().apply { inSampleSize = 2 }
+                                BitmapFactory.decodeFile(pageFile.absolutePath, opts)
+                            } catch (_: Exception) {
+                                null
+                            }
+                        }
+                        if (pageBmp != null) {
+                            Image(
+                                bitmap = pageBmp.asImageBitmap(),
+                                contentDescription = pageFile.name,
+                                modifier = Modifier.fillMaxSize(),
+                                contentScale = ContentScale.Fit
+                            )
+                        } else {
+                            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                                CircularProgressIndicator(color = MiOrange, modifier = Modifier.size(32.dp))
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Floating reset zoom badge when zoomed in
+            if (zoomScale > 1.05f) {
+                Surface(
+                    color = Color.Black.copy(alpha = 0.75f),
+                    shape = RoundedCornerShape(20.dp),
+                    border = BorderStroke(1.dp, Color.White.copy(alpha = 0.35f)),
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .padding(bottom = 20.dp)
+                        .clickable {
+                            zoomScale = 1f
+                            panOffset = Offset.Zero
+                        }
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 7.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.ZoomOutMap,
+                            contentDescription = "Reset Zoom",
+                            tint = Color.White,
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = "${(zoomScale * 100).roundToInt()}% • Double tap to reset",
+                            color = Color.White,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Medium
+                        )
+                    }
+                }
             }
         }
     }

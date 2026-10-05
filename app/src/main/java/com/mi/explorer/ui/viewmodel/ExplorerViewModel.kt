@@ -919,11 +919,21 @@ class ExplorerViewModel(application: Application) : AndroidViewModel(application
             return
         }
 
-        _categoryViewState.value = CategoryViewState(
-            category = category,
-            title = title,
-            isLoading = true
-        )
+        val cached = fileRepository.getCachedCategory(category)
+        if (!cached.isNullOrEmpty()) {
+            _categoryViewState.value = CategoryViewState(
+                category = category,
+                title = title,
+                items = cached,
+                isLoading = false
+            )
+        } else {
+            _categoryViewState.value = CategoryViewState(
+                category = category,
+                title = title,
+                isLoading = true
+            )
+        }
         navigateToScreen(Screen.CATEGORY_VIEW)
 
         viewModelScope.launch {
@@ -1072,10 +1082,20 @@ class ExplorerViewModel(application: Application) : AndroidViewModel(application
         val index = imageFiles.indexOfFirst { it.file.absolutePath == file.absolutePath }.coerceAtLeast(0)
         _imageViewerState.value = ImageViewerState(
             currentFile = file,
-            imageList = imageFiles,
+            imageList = if (imageFiles.isNotEmpty()) imageFiles else listOf(FileItem(file)),
             currentIndex = index
         )
         navigateToScreen(Screen.IMAGE_VIEWER)
+    }
+
+    fun setImageIndex(index: Int) {
+        val state = _imageViewerState.value
+        if (state.imageList.isNotEmpty() && index in state.imageList.indices) {
+            _imageViewerState.value = state.copy(
+                currentIndex = index,
+                currentFile = state.imageList[index].file
+            )
+        }
     }
 
     fun nextImage() {
@@ -1102,6 +1122,11 @@ class ExplorerViewModel(application: Application) : AndroidViewModel(application
 
     // App & APK Manager (Cloner / Extractor & Downgrade Hub)
     fun openAppInstaller() {
+        val cached = appsRepository.getCachedStorageApks()
+        if (!cached.isNullOrEmpty()) {
+            _storageApks.value = cached
+            isStorageApksLoading.value = false
+        }
         navigateToScreen(Screen.APP_INSTALLER)
         loadStorageApks()
     }
@@ -1125,7 +1150,9 @@ class ExplorerViewModel(application: Application) : AndroidViewModel(application
 
     fun loadStorageApks() {
         viewModelScope.launch {
-            isStorageApksLoading.value = true
+            if (_storageApks.value.isEmpty()) {
+                isStorageApksLoading.value = true
+            }
             val apks = appsRepository.getStorageApkFiles()
             _storageApks.value = apks
             isStorageApksLoading.value = false

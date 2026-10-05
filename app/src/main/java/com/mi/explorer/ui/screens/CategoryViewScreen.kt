@@ -1,9 +1,13 @@
 package com.mi.explorer.ui.screens
 
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.*
@@ -11,11 +15,16 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.mi.explorer.data.model.ApkTab
 import com.mi.explorer.data.model.ColorTag
@@ -35,6 +44,7 @@ import com.mi.explorer.ui.components.ZipCompressDialog
 import com.mi.explorer.ui.theme.MiGreen
 import com.mi.explorer.ui.theme.MiOrange
 import com.mi.explorer.ui.viewmodel.ExplorerViewModel
+import com.mi.explorer.utils.ThumbnailLoader
 import java.io.File
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -198,7 +208,8 @@ fun CategoryViewScreen(
                     }
                 }
             } else if (viewMode == ViewMode.GRID) {
-                val gridColumns = 4
+                val isImageCategory = state.category == FileCategory.IMAGE
+                val gridColumns = if (isImageCategory) 3 else 4
                 val chunked = sortedItems.chunked(gridColumns)
                 LazyColumn(
                     modifier = Modifier.fillMaxSize(),
@@ -214,20 +225,29 @@ fun CategoryViewScreen(
                                 val itemTagIds = fileTagsMap[item.path] ?: emptyList()
                                 val itemTags = itemTagIds.mapNotNull { ColorTag.findTag(it) }
                                 Box(modifier = Modifier.weight(1f)) {
-                                    MiFileGridItem(
-                                        item = item,
-                                        isSelected = false,
-                                        isSelectionMode = false,
-                                        tags = itemTags,
-                                        onClick = {
-                                            if (!viewModel.openFileSmart(item, sortedItems)) {
-                                                openWithTarget = item
-                                            }
-                                        },
-                                        onLongClick = {},
-                                        onToggleSelect = {},
-                                        onMenuAction = { action -> handleCategoryMenuAction(action, item) }
-                                    )
+                                    if (isImageCategory) {
+                                        MiImageGalleryItem(
+                                            item = item,
+                                            onClick = { viewModel.openImageViewer(item.file, sortedItems) },
+                                            onLongClick = { openWithTarget = item },
+                                            onMenuAction = { action -> handleCategoryMenuAction(action, item) }
+                                        )
+                                    } else {
+                                        MiFileGridItem(
+                                            item = item,
+                                            isSelected = false,
+                                            isSelectionMode = false,
+                                            tags = itemTags,
+                                            onClick = {
+                                                if (!viewModel.openFileSmart(item, sortedItems)) {
+                                                    openWithTarget = item
+                                                }
+                                            },
+                                            onLongClick = {},
+                                            onToggleSelect = {},
+                                            onMenuAction = { action -> handleCategoryMenuAction(action, item) }
+                                        )
+                                    }
                                 }
                             }
                             repeat(gridColumns - rowItems.size) {
@@ -487,5 +507,92 @@ fun CategoryViewScreen(
             onToggleBigFilesFilter = { filterOnlyBigFiles = !filterOnlyBigFiles },
             onDismiss = { showCategorySort = false }
         )
+    }
+}
+
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
+@Composable
+fun MiImageGalleryItem(
+    item: FileItem,
+    onClick: () -> Unit,
+    onLongClick: () -> Unit,
+    onMenuAction: (String) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val thumbnailBitmap by ThumbnailLoader.rememberThumbnailState(
+        file = item.file,
+        category = FileCategory.IMAGE,
+        targetWidth = 400,
+        targetHeight = 400
+    )
+
+    Surface(
+        shape = RoundedCornerShape(12.dp),
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+        tonalElevation = 2.dp,
+        modifier = modifier
+            .aspectRatio(1f)
+            .clip(RoundedCornerShape(12.dp))
+            .combinedClickable(
+                onClick = onClick,
+                onLongClick = onLongClick
+            )
+            .testTag("gallery_photo_${item.name}")
+    ) {
+        Box(modifier = Modifier.fillMaxSize()) {
+            if (thumbnailBitmap != null) {
+                Image(
+                    bitmap = thumbnailBitmap!!.asImageBitmap(),
+                    contentDescription = item.name,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.fillMaxSize()
+                )
+            } else {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(Color(0xFF0284C7).copy(alpha = 0.12f)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Image,
+                        contentDescription = null,
+                        tint = Color(0xFF0284C7),
+                        modifier = Modifier.size(36.dp)
+                    )
+                }
+            }
+
+            // Subtle gradient overlay at the bottom with file format and size
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .align(Alignment.BottomCenter)
+                    .background(
+                        Brush.verticalGradient(
+                            colors = listOf(Color.Transparent, Color.Black.copy(alpha = 0.7f))
+                        )
+                    )
+                    .padding(horizontal = 6.dp, vertical = 4.dp)
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = item.extension.uppercase(),
+                        color = Color.White.copy(alpha = 0.95f),
+                        fontSize = 9.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Text(
+                        text = item.formattedSize,
+                        color = Color.White.copy(alpha = 0.95f),
+                        fontSize = 9.sp
+                    )
+                }
+            }
+        }
     }
 }

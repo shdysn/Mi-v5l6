@@ -508,8 +508,9 @@ object FileIconHelper {
             category == FileCategory.APK
         )
 
+        val reqPx = (size.value * 3f).toInt().coerceAtLeast(240)
         val thumbnailBitmap by if (shouldLoadThumbnail) {
-            ThumbnailLoader.rememberThumbnailState(file, category)
+            ThumbnailLoader.rememberThumbnailState(file, category, targetWidth = reqPx, targetHeight = reqPx)
         } else {
             remember { mutableStateOf(null) }
         }

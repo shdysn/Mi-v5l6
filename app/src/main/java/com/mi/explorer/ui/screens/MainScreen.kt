@@ -1299,7 +1299,7 @@ fun RecentTabContent(
                 }
 
                 if (recentViewMode == ViewMode.GRID) {
-                    val gridColumns = 4
+                    val gridColumns = if (activeFilter == "Images") 3 else 4
                     val chunked = files.chunked(gridColumns)
                     items(chunked, key = { row -> "recent_grid_${row.first().path}" }) { rowItems ->
                         Row(

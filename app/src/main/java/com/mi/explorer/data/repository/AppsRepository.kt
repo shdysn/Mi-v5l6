@@ -14,7 +14,26 @@ class AppsRepository(private val context: Context) {
 
     private val pm = context.packageManager
 
-    suspend fun getStorageApkFiles(): List<ApkFileItem> = withContext(Dispatchers.IO) {
+    companion object {
+        @Volatile
+        private var cachedStorageApks: List<ApkFileItem>? = null
+        private val parsedApkCache = android.util.LruCache<String, ApkFileItem>(300)
+
+        fun clearCache() {
+            cachedStorageApks = null
+        }
+    }
+
+    fun getCachedStorageApks(): List<ApkFileItem>? = cachedStorageApks
+
+    suspend fun getStorageApkFiles(forceRefresh: Boolean = false): List<ApkFileItem> = withContext(Dispatchers.IO) {
+        if (!forceRefresh) {
+            val cached = cachedStorageApks
+            if (!cached.isNullOrEmpty()) {
+                return@withContext cached
+            }
+        }
+
         val foundApkFiles = mutableListOf<File>()
         val seenPaths = mutableSetOf<String>()
 
@@ -47,32 +66,24 @@ class AppsRepository(private val context: Context) {
             // MediaStore fallback to filesystem scan
         }
 
-        // 2. Focused filesystem search across primary download and document folders
+        // 2. Fast check of standard download & app storage folders (no deep recursion)
         val extStorage = Environment.getExternalStorageDirectory()
-        val searchDirs = mutableListOf<File>()
-
-        val specificFolders = listOfNotNull(
+        val standardFolders = listOfNotNull(
             Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS),
             File(extStorage, "Download"),
             File(extStorage, "Downloads"),
             File(extStorage, "Bluetooth"),
-            File(extStorage, "Documents"),
-            File(extStorage, "WhatsApp/Media/WhatsApp Documents"),
             File(extStorage, "Telegram/Telegram Documents"),
-            File(extStorage, "ShareMe"),
+            File(extStorage, "WhatsApp/Media/WhatsApp Documents"),
             File(extStorage, "Apks"),
-            File(extStorage, "Apps"),
             File(context.filesDir, "MiExplorer/APKs"),
             File(context.filesDir, "MiExplorer/Backup"),
             File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), "MiExplorer/Backup"),
             File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), "MiExplorer/APKs")
         ).filter { it.exists() && it.canRead() }
 
-        searchDirs.addAll(specificFolders)
-
-        // Shallow check for root storage directory only (depth 0)
-        if (extStorage != null && extStorage.exists() && extStorage.canRead()) {
-            extStorage.listFiles()?.forEach { f ->
+        for (dir in standardFolders.distinct()) {
+            dir.listFiles()?.forEach { f ->
                 if (f.isFile) {
                     val ext = f.extension.lowercase()
                     if (ext in listOf("apk", "xapk", "apks") && seenPaths.add(f.absolutePath)) {
@@ -82,9 +93,12 @@ class AppsRepository(private val context: Context) {
             }
         }
 
-        for (dir in searchDirs.distinct()) {
-            scanApkFilesRecursively(dir, foundApkFiles, seenPaths, currentDepth = 0, maxDepth = 2)
-            if (foundApkFiles.size >= 100) break
+        // Only if still completely empty, do a shallow 1-level scan in download folders
+        if (foundApkFiles.isEmpty()) {
+            for (dir in standardFolders.distinct()) {
+                scanApkFilesRecursively(dir, foundApkFiles, seenPaths, currentDepth = 0, maxDepth = 1)
+                if (foundApkFiles.size >= 50) break
+            }
         }
 
         // If no APK files are found on storage in clean test container, auto-backup the app APK as a sample
@@ -98,7 +112,9 @@ class AppsRepository(private val context: Context) {
             result.add(item)
         }
 
-        result.sortedByDescending { it.lastModified }
+        val sorted = result.sortedByDescending { it.lastModified }
+        cachedStorageApks = sorted
+        sorted
     }
 
     private fun scanApkFilesRecursively(
@@ -181,12 +197,17 @@ class AppsRepository(private val context: Context) {
     }
 
     fun parseApkFile(file: File, isBackup: Boolean = false): ApkFileItem {
+        val cacheKey = "${file.absolutePath}_${file.lastModified()}_${file.length()}"
+        parsedApkCache.get(cacheKey)?.let { return it }
+
         val ext = file.extension.lowercase()
         if (ext == "xapk" || ext == "apks") {
-            return parseBundleApkFile(file, isBackup)
+            val item = parseBundleApkFile(file, isBackup)
+            parsedApkCache.put(cacheKey, item)
+            return item
         }
-        return try {
-            val flags = PackageManager.GET_PERMISSIONS or PackageManager.GET_META_DATA
+        val item = try {
+            val flags = 0
             val pkgInfo = pm.getPackageArchiveInfo(file.absolutePath, flags)
             val appInfo = pkgInfo?.applicationInfo
             if (pkgInfo != null && appInfo != null) {
@@ -230,28 +251,8 @@ class AppsRepository(private val context: Context) {
                     pkgInfo.versionCode.toLong()
                 }
 
-                // Extract requested permissions
                 val permissions = pkgInfo.requestedPermissions?.toList() ?: emptyList()
-
-                // Extract supported ABIs by inspecting lib/ folder inside APK zip
-                val abis = mutableSetOf<String>()
-                try {
-                    java.util.zip.ZipFile(file).use { zf ->
-                        val entries = zf.entries()
-                        while (entries.hasMoreElements()) {
-                            val entry = entries.nextElement()
-                            if (entry.name.startsWith("lib/")) {
-                                val abi = entry.name.substringAfter("lib/").substringBefore('/')
-                                if (abi.isNotEmpty() && !abi.contains(".")) {
-                                    abis.add(abi)
-                                }
-                            }
-                        }
-                    }
-                } catch (e: Exception) {
-                    // ignore
-                }
-                val supportedAbis = if (abis.isEmpty()) listOf("Universal") else abis.toList()
+                val supportedAbis = listOf("Universal")
 
                 ApkFileItem(
                     file = file,
@@ -303,6 +304,8 @@ class AppsRepository(private val context: Context) {
                 lastModified = file.lastModified()
             )
         }
+        parsedApkCache.put(cacheKey, item)
+        return item
     }
 
     private fun parseBundleApkFile(file: File, isBackup: Boolean): ApkFileItem {

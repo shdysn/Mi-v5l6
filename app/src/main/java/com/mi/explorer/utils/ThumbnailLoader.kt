@@ -30,9 +30,9 @@ import java.util.Locale
  */
 object ThumbnailLoader {
 
-    // Allocate 1/8th of available app memory for the bitmap thumbnail cache
+    // Allocate 1/4th of available app memory for the bitmap thumbnail cache
     private val maxMemoryKb = (Runtime.getRuntime().maxMemory() / 1024).toInt()
-    private val cacheSizeKb = (maxMemoryKb / 8).coerceAtLeast(1024 * 4) // minimum 4MB
+    private val cacheSizeKb = (maxMemoryKb / 4).coerceAtLeast(1024 * 16) // minimum 16MB
 
     private val memoryCache = object : LruCache<String, Bitmap>(cacheSizeKb) {
         override fun sizeOf(key: String, bitmap: Bitmap): Int {
@@ -54,8 +54,8 @@ object ThumbnailLoader {
         context: Context,
         file: File,
         category: FileCategory,
-        targetWidth: Int = 128,
-        targetHeight: Int = 128
+        targetWidth: Int = 360,
+        targetHeight: Int = 360
     ): Bitmap? = withContext(Dispatchers.IO) {
         if (!file.exists() || !file.canRead() || file.isDirectory) {
             return@withContext null
@@ -93,7 +93,8 @@ object ThumbnailLoader {
 
         options.inSampleSize = calculateInSampleSize(options, reqWidth, reqHeight)
         options.inJustDecodeBounds = false
-        options.inPreferredConfig = Bitmap.Config.RGB_565 // Memory-friendly 16-bit format
+        options.inPreferredConfig = Bitmap.Config.ARGB_8888 // High quality 32-bit color for clear thumbnails
+        options.inDither = true
 
         val decoded = BitmapFactory.decodeFile(file.absolutePath, options) ?: return null
 
@@ -208,15 +209,19 @@ object ThumbnailLoader {
      * Composable helper to remember and load a thumbnail for a file.
      */
     @Composable
-    fun rememberThumbnailState(file: File, category: FileCategory): State<Bitmap?> {
+    fun rememberThumbnailState(
+        file: File,
+        category: FileCategory,
+        targetWidth: Int = 360,
+        targetHeight: Int = 360
+    ): State<Bitmap?> {
         val context = LocalContext.current
-        val cacheKey = "${file.absolutePath}_${file.lastModified()}_128x128"
+        val cacheKey = "${file.absolutePath}_${file.lastModified()}_${targetWidth}x$targetHeight"
         val initial = remember(cacheKey) { memoryCache.get(cacheKey) }
 
         return produceState<Bitmap?>(initialValue = initial, key1 = cacheKey) {
             if (value == null && (category == FileCategory.IMAGE || category == FileCategory.VIDEO || category == FileCategory.APK)) {
-                kotlinx.coroutines.delay(100) // Yield priority to Compose initial frame render
-                value = loadThumbnail(context, file, category, 128, 128)
+                value = loadThumbnail(context, file, category, targetWidth, targetHeight)
             }
         }
     }
