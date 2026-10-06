@@ -51,8 +51,7 @@ enum class Screen {
     FILE_SHREDDER,
     SMART_COLLECTIONS,
     TIME_MACHINE,
-    APP_INSTALLER,
-    ROOT_BROWSER
+    APP_INSTALLER
 }
 
 data class PdfViewerState(
@@ -978,11 +977,7 @@ class ExplorerViewModel(application: Application) : AndroidViewModel(application
     fun openTextEditor(file: File) {
         viewModelScope.launch {
             val directRead = fileRepository.readText(file).getOrNull()
-            val rawContent = if (directRead != null) {
-                directRead
-            } else {
-                com.mi.explorer.utils.RootHelper.readFileWithRoot(file).getOrDefault("")
-            }
+            val rawContent = directRead ?: ""
             // Cap large files to prevent Compose OOM / ANR freeze on huge log files
             val maxSafeChars = 150_000
             val content = if (rawContent.length > maxSafeChars) {
@@ -2156,10 +2151,6 @@ class ExplorerViewModel(application: Application) : AndroidViewModel(application
     fun filterByTag(tagId: String?) {
         selectedTagFilter.value = tagId
         refreshCurrentDirectory()
-    }
-
-    fun openRootBrowser() {
-        navigateToScreen(Screen.ROOT_BROWSER)
     }
 
     // ==========================================

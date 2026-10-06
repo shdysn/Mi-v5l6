@@ -44,7 +44,6 @@ fun MiToolsBottomSheet(
     onCleanerClick: () -> Unit,
     onAppManagerClick: () -> Unit,
     onAppInstallerClick: () -> Unit = {},
-    onRootBrowserClick: () -> Unit = {},
     onFtpClick: () -> Unit,
     onDualPaneToggle: () -> Unit,
     isDualPaneActive: Boolean = false,
@@ -135,14 +134,6 @@ fun MiToolsBottomSheet(
             icon = Icons.Default.EnhancedEncryption,
             iconColor = Color(0xFFEF4444),
             onClick = { onDismiss(); onFileShredderClick() }
-        ),
-        ToolItem(
-            id = "root_browser",
-            title = "Root Explorer",
-            subtitle = "Superuser System Browser",
-            icon = Icons.Default.Security,
-            iconColor = Color(0xFFDC2626),
-            onClick = { onDismiss(); onRootBrowserClick() }
         ),
         ToolItem(
             id = "trash",
