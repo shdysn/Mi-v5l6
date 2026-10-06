@@ -37,6 +37,7 @@ import com.mi.explorer.ui.components.ChecksumDialog
 import com.mi.explorer.ui.components.ExifCleanerDialog
 import com.mi.explorer.ui.components.MiFileGridItem
 import com.mi.explorer.ui.components.MiFileRow
+import com.mi.explorer.ui.components.MiImageGalleryView
 import com.mi.explorer.ui.components.MiSortBottomSheet
 import com.mi.explorer.ui.components.OpenFileChooserDialog
 import com.mi.explorer.ui.components.TagSelectionDialog
@@ -44,7 +45,9 @@ import com.mi.explorer.ui.components.ZipCompressDialog
 import com.mi.explorer.ui.theme.MiGreen
 import com.mi.explorer.ui.theme.MiOrange
 import com.mi.explorer.ui.viewmodel.ExplorerViewModel
+import com.mi.explorer.utils.FileOpener
 import com.mi.explorer.utils.ThumbnailLoader
+import kotlinx.coroutines.launch
 import java.io.File
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -54,8 +57,10 @@ fun CategoryViewScreen(
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     val state by viewModel.categoryViewState.collectAsStateWithLifecycle()
     val fileTagsMap by viewModel.fileTagsMap.collectAsStateWithLifecycle()
+    val favorites by viewModel.favorites.collectAsStateWithLifecycle()
 
     var openWithTarget by remember { mutableStateOf<FileItem?>(null) }
     var checksumTarget by remember { mutableStateOf<FileItem?>(null) }
@@ -128,9 +133,15 @@ fun CategoryViewScreen(
             TopAppBar(
                 title = {
                     Column {
-                        Text(text = state.title, style = MaterialTheme.typography.titleLarge)
                         Text(
-                            text = "${sortedItems.size} files",
+                            text = if (state.category == FileCategory.IMAGE) "Photos & Gallery" else state.title,
+                            style = MaterialTheme.typography.titleLarge
+                        )
+                        Text(
+                            text = if (state.category == FileCategory.IMAGE)
+                                "${sortedItems.size} photos • ${FileItem.formatBytes(sortedItems.sumOf { it.size })}"
+                            else
+                                "${sortedItems.size} files",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -145,12 +156,14 @@ fun CategoryViewScreen(
                     }
                 },
                 actions = {
-                    IconButton(onClick = { viewMode = if (viewMode == ViewMode.LIST) ViewMode.GRID else ViewMode.LIST }) {
-                        Icon(
-                            imageVector = if (viewMode == ViewMode.LIST) Icons.Default.GridView else Icons.Default.ViewList,
-                            contentDescription = "Toggle View Mode",
-                            tint = MiOrange
-                        )
+                    if (state.category != FileCategory.IMAGE) {
+                        IconButton(onClick = { viewMode = if (viewMode == ViewMode.LIST) ViewMode.GRID else ViewMode.LIST }) {
+                            Icon(
+                                imageVector = if (viewMode == ViewMode.LIST) Icons.Default.GridView else Icons.Default.ViewList,
+                                contentDescription = "Toggle View Mode",
+                                tint = MiOrange
+                            )
+                        }
                     }
                     IconButton(onClick = { showCategorySort = true }) {
                         Icon(Icons.Default.Sort, contentDescription = "Sort", tint = MiOrange)
@@ -179,6 +192,43 @@ fun CategoryViewScreen(
                 Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     CircularProgressIndicator(color = MiOrange)
                 }
+            } else if (state.category == FileCategory.IMAGE) {
+                MiImageGalleryView(
+                    items = sortedItems,
+                    favorites = favorites,
+                    onOpenImage = { item, list ->
+                        viewModel.openImageViewer(item.file, list)
+                    },
+                    onMenuAction = { action, item ->
+                        handleCategoryMenuAction(action, item)
+                    },
+                    onToggleFavorite = { file ->
+                        viewModel.toggleFavorite(file)
+                    },
+                    onBatchDelete = { targets ->
+                        viewModel.deleteItems(targets)
+                    },
+                    onBatchShare = { targets ->
+                        FileOpener.shareMultipleFiles(context, targets)
+                    },
+                    onBatchFavorite = { targets ->
+                        viewModel.toggleFavorites(targets)
+                    },
+                    onBatchVault = { targets ->
+                        viewModel.addFilesToVault(targets)
+                        viewModel.refreshCategory()
+                    },
+                    onBatchCleanExif = { targets ->
+                        scope.launch {
+                            for (target in targets) {
+                                val cleanFile = File(target.file.parentFile, "clean_${target.file.name}")
+                                com.mi.explorer.utils.ExifPrivacyCleaner.stripExif(target.file, cleanFile)
+                            }
+                            viewModel.refreshCategory()
+                            viewModel.showMessage("Cleaned EXIF for ${targets.size} photos")
+                        }
+                    }
+                )
             } else if (sortedItems.isEmpty()) {
                 Box(
                     modifier = Modifier

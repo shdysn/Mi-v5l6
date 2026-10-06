@@ -10,6 +10,10 @@ import android.graphics.Paint
 import android.media.ExifInterface
 import android.util.LruCache
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.pager.HorizontalPager
@@ -160,6 +164,8 @@ fun ImageViewerScreen(
     var showInfoDialog by remember { mutableStateOf(false) }
     var showExifCleaner by remember { mutableStateOf(false) }
     var showCompressDialog by remember { mutableStateOf(false) }
+    var showDeleteDialog by remember { mutableStateOf(false) }
+    var areControlsVisible by remember { mutableStateOf(true) }
     var isEditStudioOpen by remember { mutableStateOf(false) }
     var editTabIndex by remember { mutableIntStateOf(0) } // 0=Transform/Crop, 1=Filters, 2=Adjust
 
@@ -200,8 +206,10 @@ fun ImageViewerScreen(
     val thumbListState = rememberLazyListState()
 
     // Sync external index changes with pager (when opening new image or changing from outside)
-    LaunchedEffect(state.currentFile?.absolutePath, state.currentIndex) {
-        if (state.currentIndex in 0 until pageCount && pagerState.currentPage != state.currentIndex && !pagerState.isScrollInProgress) {
+    var lastSettledIndex by remember { mutableIntStateOf(state.currentIndex) }
+    LaunchedEffect(state.currentIndex) {
+        if (state.currentIndex in 0 until pageCount && pagerState.currentPage != state.currentIndex && state.currentIndex != lastSettledIndex && !pagerState.isScrollInProgress) {
+            lastSettledIndex = state.currentIndex
             pagerState.scrollToPage(state.currentIndex)
         }
     }
@@ -210,6 +218,7 @@ fun ImageViewerScreen(
     LaunchedEffect(pagerState) {
         snapshotFlow { pagerState.settledPage }.collect { settled ->
             if (images.isNotEmpty() && settled in images.indices && settled != state.currentIndex) {
+                lastSettledIndex = settled
                 viewModel.setImageIndex(settled)
             }
         }
@@ -257,96 +266,377 @@ fun ImageViewerScreen(
         contrastAdj != 1f ||
         saturationAdj != 1f
 
-    Scaffold(
-        modifier = modifier.testTag("image_viewer_screen"),
-        topBar = {
-            TopAppBar(
-                title = {
-                    Column {
+    Box(
+        modifier = modifier
+            .fillMaxSize()
+            .background(Color.Black)
+            .testTag("image_viewer_screen")
+    ) {
+        // 1. Fullscreen Horizontal Pager with Images
+        HorizontalPager(
+            state = pagerState,
+            userScrollEnabled = zoomScale <= 1.05f,
+            beyondViewportPageCount = 2,
+            key = { page -> images.getOrNull(page)?.path ?: page.toString() },
+            modifier = Modifier.fillMaxSize()
+        ) { page ->
+            val pageItem = images.getOrNull(page)
+            val pageFile = pageItem?.file ?: (if (page == state.currentIndex) state.currentFile else null)
+            val isCurrent = page == pagerState.currentPage
+
+            if (pageFile != null) {
+                ImageViewerPageItem(
+                    file = pageFile,
+                    isCurrentPage = isCurrent,
+                    zoomScale = if (isCurrent) zoomScale else 1f,
+                    panOffset = if (isCurrent) panOffset else Offset.Zero,
+                    transformState = transformState,
+                    rotationDegrees = if (isCurrent) rotationDegrees else 0f,
+                    flipHorizontal = if (isCurrent) flipHorizontal else false,
+                    flipVertical = if (isCurrent) flipVertical else false,
+                    cropRatio = if (isCurrent) selectedCropRatio.ratio else null,
+                    composeColorMatrix = composeColorMatrix,
+                    onSingleTap = {
+                        if (!isEditStudioOpen) {
+                            areControlsVisible = !areControlsVisible
+                        }
+                    },
+                    onDoubleTap = {
+                        if (isCurrent) {
+                            if (zoomScale > 1.1f) {
+                                zoomScale = 1f
+                                panOffset = Offset.Zero
+                            } else {
+                                zoomScale = 2.25f
+                            }
+                        }
+                    },
+                    onBitmapReady = { loadedBmp ->
+                        if (page == pagerState.currentPage) {
+                            activeBitmap = loadedBmp
+                        }
+                    }
+                )
+            }
+        }
+
+        // 2. Left Navigation Button (Previous Picture)
+        if (areControlsVisible && pagerState.currentPage > 0 && zoomScale <= 1.05f) {
+            Surface(
+                shape = CircleShape,
+                color = Color.Black.copy(alpha = 0.5f),
+                border = BorderStroke(1.dp, Color.White.copy(alpha = 0.35f)),
+                modifier = Modifier
+                    .align(Alignment.CenterStart)
+                    .padding(start = 12.dp)
+                    .size(46.dp)
+                    .clip(CircleShape)
+                    .clickable {
+                        scope.launch {
+                            pagerState.animateScrollToPage(pagerState.currentPage - 1)
+                        }
+                    }
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                        contentDescription = "Previous Picture",
+                        tint = Color.White,
+                        modifier = Modifier.size(24.dp)
+                    )
+                }
+            }
+        }
+
+        // 3. Right Navigation Button (Next Picture)
+        if (areControlsVisible && pagerState.currentPage < pageCount - 1 && zoomScale <= 1.05f) {
+            Surface(
+                shape = CircleShape,
+                color = Color.Black.copy(alpha = 0.5f),
+                border = BorderStroke(1.dp, Color.White.copy(alpha = 0.35f)),
+                modifier = Modifier
+                    .align(Alignment.CenterEnd)
+                    .padding(end = 12.dp)
+                    .size(46.dp)
+                    .clip(CircleShape)
+                    .clickable {
+                        scope.launch {
+                            pagerState.animateScrollToPage(pagerState.currentPage + 1)
+                        }
+                    }
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Filled.ArrowForward,
+                        contentDescription = "Next Picture",
+                        tint = Color.White,
+                        modifier = Modifier.size(24.dp)
+                    )
+                }
+            }
+        }
+
+        // 4. Floating Reset Zoom Badge when zoomed in
+        if (zoomScale > 1.05f) {
+            Surface(
+                color = Color.Black.copy(alpha = 0.75f),
+                shape = RoundedCornerShape(20.dp),
+                border = BorderStroke(1.dp, Color.White.copy(alpha = 0.35f)),
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .padding(bottom = if (areControlsVisible) 110.dp else 24.dp)
+                    .clickable {
+                        zoomScale = 1f
+                        panOffset = Offset.Zero
+                    }
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 7.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.ZoomOutMap,
+                        contentDescription = "Reset Zoom",
+                        tint = Color.White,
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(
+                        text = "${(zoomScale * 100).roundToInt()}% • Double tap to reset",
+                        color = Color.White,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Medium
+                    )
+                }
+            }
+        }
+
+        // 5. Overlaid Modern Top Bar (Animates In/Out)
+        AnimatedVisibility(
+            visible = areControlsVisible,
+            enter = fadeIn() + slideInVertically { -it },
+            exit = fadeOut() + slideOutVertically { -it },
+            modifier = Modifier.align(Alignment.TopCenter)
+        ) {
+            Surface(
+                color = Color.Black.copy(alpha = 0.75f),
+                contentColor = Color.White,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .windowInsetsPadding(WindowInsets.statusBars)
+                        .padding(horizontal = 8.dp, vertical = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    IconButton(
+                        onClick = { viewModel.handleBackPress() },
+                        modifier = Modifier.testTag("image_viewer_back_button")
+                    ) {
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = Color.White)
+                    }
+
+                    Column(
+                        modifier = Modifier
+                            .weight(1f)
+                            .padding(horizontal = 6.dp)
+                    ) {
                         Text(
                             text = state.currentFile?.name ?: "Photos",
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold,
+                            color = Color.White,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis
                         )
                         if (state.imageList.isNotEmpty()) {
                             val currentBmp = activeBitmap
+                            val dimensions = if (currentBmp != null) " • ${currentBmp.width}×${currentBmp.height}" else ""
+                            val sizeText = state.currentFile?.let { " • ${FileItem.formatBytes(it.length())}" } ?: ""
                             Text(
-                                text = "${state.currentIndex + 1} of ${state.imageList.size}" +
-                                    (if (currentBmp != null) " • ${currentBmp.width}×${currentBmp.height}" else ""),
+                                text = "${state.currentIndex + 1} of ${state.imageList.size}$dimensions$sizeText",
                                 style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                color = Color.White.copy(alpha = 0.7f),
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
                             )
                         }
                     }
-                },
-                navigationIcon = {
+
+                    val favorites by viewModel.favorites.collectAsStateWithLifecycle()
+                    val isFavorite = remember(state.currentFile?.absolutePath, favorites) {
+                        state.currentFile?.let { f -> favorites.any { it.path == f.absolutePath } } == true
+                    }
                     IconButton(
-                        onClick = { viewModel.handleBackPress() },
-                        modifier = Modifier.testTag("image_viewer_back_button")
+                        onClick = { state.currentFile?.let { viewModel.toggleFavorite(it) } },
+                        modifier = Modifier.testTag("image_viewer_favorite_button")
                     ) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
-                    }
-                },
-                actions = {
-                    IconButton(onClick = { isEditStudioOpen = !isEditStudioOpen }) {
                         Icon(
-                            imageVector = Icons.Default.Tune,
-                            contentDescription = "Pro Image Editor",
-                            tint = if (isEditStudioOpen || hasUnsavedEdits) MiOrange else MaterialTheme.colorScheme.onSurface
+                            imageVector = if (isFavorite) Icons.Default.Star else Icons.Default.StarBorder,
+                            contentDescription = "Favorite",
+                            tint = if (isFavorite) Color(0xFFFBBF24) else Color.White
                         )
                     }
-                    IconButton(onClick = { showCompressDialog = true }) {
-                        Icon(
-                            imageVector = Icons.Default.Compress,
-                            contentDescription = "Resize & Compress",
-                            tint = Color(0xFF3B82F6)
-                        )
-                    }
-                    IconButton(onClick = { showExifCleaner = true }) {
-                        Icon(Icons.Default.Security, contentDescription = "EXIF Privacy Cleaner", tint = Color(0xFF10B981))
-                    }
+
                     if (state.currentFile != null) {
-                        IconButton(onClick = {
-                            FileOpener.shareFile(context, FileItem(state.currentFile!!))
-                        }) {
-                            Icon(Icons.Default.Share, contentDescription = "Share")
+                        IconButton(
+                            onClick = { FileOpener.shareFile(context, FileItem(state.currentFile!!)) },
+                            modifier = Modifier.testTag("image_viewer_share_button")
+                        ) {
+                            Icon(Icons.Default.Share, contentDescription = "Share", tint = Color.White)
                         }
                     }
-                    IconButton(onClick = { showInfoDialog = true }) {
-                        Icon(Icons.Default.Info, contentDescription = "Details")
+
+                    Box {
+                        var showMenu by remember { mutableStateOf(false) }
+
+                        IconButton(
+                            onClick = { showMenu = true },
+                            modifier = Modifier.testTag("image_viewer_more_menu_button")
+                        ) {
+                            Icon(Icons.Default.MoreVert, contentDescription = "More Options", tint = Color.White)
+                        }
+
+                        DropdownMenu(
+                            expanded = showMenu,
+                            onDismissRequest = { showMenu = false },
+                            modifier = Modifier
+                                .background(Color(0xFF1E2430))
+                                .widthIn(min = 230.dp)
+                        ) {
+                            DropdownMenuItem(
+                                leadingIcon = {
+                                    Icon(Icons.Default.Info, contentDescription = null, tint = MiOrange, modifier = Modifier.size(20.dp))
+                                },
+                                text = {
+                                    Column {
+                                        Text("Details", color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                                        Text("File size, resolution & path", color = Color.LightGray, fontSize = 11.sp)
+                                    }
+                                },
+                                onClick = {
+                                    showMenu = false
+                                    showInfoDialog = true
+                                }
+                            )
+
+                            HorizontalDivider(color = Color.White.copy(alpha = 0.12f))
+
+                            DropdownMenuItem(
+                                leadingIcon = {
+                                    Icon(Icons.Default.Compress, contentDescription = null, tint = Color(0xFF38BDF8), modifier = Modifier.size(20.dp))
+                                },
+                                text = {
+                                    Column {
+                                        Text("Resize & Compress", color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                                        Text("Reduce size & optimize", color = Color.LightGray, fontSize = 11.sp)
+                                    }
+                                },
+                                onClick = {
+                                    showMenu = false
+                                    showCompressDialog = true
+                                }
+                            )
+
+                            DropdownMenuItem(
+                                leadingIcon = {
+                                    Icon(Icons.Default.Security, contentDescription = null, tint = Color(0xFF34D399), modifier = Modifier.size(20.dp))
+                                },
+                                text = {
+                                    Column {
+                                        Text("EXIF Privacy Cleaner", color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                                        Text("Remove GPS & camera info", color = Color.LightGray, fontSize = 11.sp)
+                                    }
+                                },
+                                onClick = {
+                                    showMenu = false
+                                    showExifCleaner = true
+                                }
+                            )
+
+                            if (state.currentFile != null) {
+                                HorizontalDivider(color = Color.White.copy(alpha = 0.12f))
+
+                                DropdownMenuItem(
+                                    leadingIcon = {
+                                        Icon(Icons.Default.OpenInNew, contentDescription = null, tint = Color(0xFFA78BFA), modifier = Modifier.size(20.dp))
+                                    },
+                                    text = {
+                                        Column {
+                                            Text("Open with...", color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                                            Text("External gallery or app", color = Color.LightGray, fontSize = 11.sp)
+                                        }
+                                    },
+                                    onClick = {
+                                        showMenu = false
+                                        FileOpener.openWithChooser(context, FileItem(state.currentFile!!))
+                                    }
+                                )
+
+                                DropdownMenuItem(
+                                    leadingIcon = {
+                                        Icon(Icons.Default.DeleteOutline, contentDescription = null, tint = Color(0xFFF87171), modifier = Modifier.size(20.dp))
+                                    },
+                                    text = {
+                                        Column {
+                                            Text("Delete", color = Color(0xFFF87171), fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                                            Text("Remove from device", color = Color.LightGray, fontSize = 11.sp)
+                                        }
+                                    },
+                                    onClick = {
+                                        showMenu = false
+                                        showDeleteDialog = true
+                                    }
+                                )
+                            }
+                        }
                     }
                 }
-            )
-        },
-        bottomBar = {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .background(MaterialTheme.colorScheme.surface)
-                    .windowInsetsPadding(WindowInsets.navigationBars)
+            }
+        }
+
+        // 6. Overlaid Modern Bottom Controls / Editor (Animates In/Out)
+        AnimatedVisibility(
+            visible = areControlsVisible || isEditStudioOpen,
+            enter = fadeIn() + slideInVertically { it },
+            exit = fadeOut() + slideOutVertically { it },
+            modifier = Modifier.align(Alignment.BottomCenter)
+        ) {
+            Surface(
+                color = Color.Black.copy(alpha = 0.85f),
+                contentColor = Color.White,
+                modifier = Modifier.fillMaxWidth()
             ) {
-                // Pro Image Editor Drawer
-                AnimatedVisibility(visible = isEditStudioOpen) {
-                    Surface(
-                        color = Color(0xFF111827),
-                        contentColor = Color.White,
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .windowInsetsPadding(WindowInsets.navigationBars)
+                ) {
+                    if (isEditStudioOpen) {
+                        // Pro Image Editor Drawer
                         Column(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .padding(14.dp),
                             verticalArrangement = Arrangement.spacedBy(12.dp)
                         ) {
-                            // Top Header with Reset & Save Copy
+                            // Top Header with Close, Reset & Save Copy
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
                                 horizontalArrangement = Arrangement.SpaceBetween,
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Row(
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    IconButton(
+                                        onClick = { isEditStudioOpen = false },
+                                        modifier = Modifier.size(32.dp)
+                                    ) {
+                                        Icon(Icons.Default.Close, contentDescription = "Close Editor", tint = Color.White, modifier = Modifier.size(20.dp))
+                                    }
                                     listOf("Transform" to 0, "Filters" to 1, "Adjust" to 2).forEach { (tabTitle, idx) ->
                                         val selected = editTabIndex == idx
                                         Surface(
@@ -359,7 +649,7 @@ fun ImageViewerScreen(
                                                 color = Color.White,
                                                 fontWeight = FontWeight.Bold,
                                                 fontSize = 12.sp,
-                                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
+                                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
                                             )
                                         }
                                     }
@@ -411,11 +701,11 @@ fun ImageViewerScreen(
                                             }
                                         },
                                         colors = ButtonDefaults.buttonColors(containerColor = MiOrange),
-                                        contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp),
+                                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
                                         shape = RoundedCornerShape(10.dp)
                                     ) {
                                         Icon(Icons.Default.Save, contentDescription = null, modifier = Modifier.size(16.dp))
-                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Spacer(modifier = Modifier.width(4.dp))
                                         Text("Save Copy", fontSize = 12.sp, fontWeight = FontWeight.Bold)
                                     }
                                 }
@@ -532,230 +822,111 @@ fun ImageViewerScreen(
                                 }
                             }
                         }
-                    }
-                }
-
-                // Horizontal Thumbnail Filmstrip when Edit Studio is closed
-                AnimatedVisibility(visible = !isEditStudioOpen && images.size > 1) {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .background(Color.White)
-                    ) {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 16.dp, vertical = 6.dp),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text(
-                                text = "Photos in collection (${images.size})",
-                                style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                            Text(
-                                text = "Swipe or tap to browse",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MiOrange
-                            )
-                        }
-
-                        LazyRow(
-                            state = thumbListState,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(56.dp)
-                                .padding(bottom = 6.dp),
-                            contentPadding = PaddingValues(horizontal = 12.dp),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            itemsIndexed(images, key = { index, item -> "thumb_${item.path}_$index" }) { index, item ->
-                                val isSelected = index == pagerState.currentPage
-                                val thumbBitmap by ThumbnailLoader.rememberThumbnailState(
-                                    file = item.file,
-                                    category = FileCategory.IMAGE,
-                                    targetWidth = 140,
-                                    targetHeight = 140
-                                )
-                                Surface(
-                                    shape = RoundedCornerShape(8.dp),
-                                    color = Color(0xFFF3F4F6),
-                                    border = if (isSelected) BorderStroke(2.5.dp, MiOrange) else BorderStroke(0.5.dp, Color(0xFFE5E7EB)),
-                                    modifier = Modifier
-                                        .size(if (isSelected) 50.dp else 44.dp)
-                                        .clip(RoundedCornerShape(8.dp))
-                                        .clickable {
-                                            scope.launch {
-                                                pagerState.animateScrollToPage(index)
+                    } else {
+                        // Horizontal Thumbnail Filmstrip when Edit Studio is closed
+                        if (images.size > 1) {
+                            LazyRow(
+                                state = thumbListState,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(top = 8.dp, bottom = 4.dp),
+                                contentPadding = PaddingValues(horizontal = 16.dp),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                itemsIndexed(images, key = { index, item -> "thumb_${item.path}_$index" }) { index, item ->
+                                    val isSelected = index == pagerState.currentPage
+                                    val thumbBitmap by ThumbnailLoader.rememberThumbnailState(
+                                        file = item.file,
+                                        category = FileCategory.IMAGE,
+                                        targetWidth = 140,
+                                        targetHeight = 140
+                                    )
+                                    Surface(
+                                        shape = RoundedCornerShape(8.dp),
+                                        color = Color(0xFF1F2937),
+                                        border = if (isSelected) BorderStroke(2.5.dp, MiOrange) else BorderStroke(0.5.dp, Color.White.copy(alpha = 0.2f)),
+                                        modifier = Modifier
+                                            .size(if (isSelected) 46.dp else 38.dp)
+                                            .clip(RoundedCornerShape(8.dp))
+                                            .clickable {
+                                                scope.launch {
+                                                    pagerState.animateScrollToPage(index)
+                                                }
                                             }
-                                        }
-                                ) {
-                                    if (thumbBitmap != null) {
-                                        Image(
-                                            bitmap = thumbBitmap!!.asImageBitmap(),
-                                            contentDescription = item.name,
-                                            contentScale = ContentScale.Crop,
-                                            modifier = Modifier.fillMaxSize()
-                                        )
-                                    } else {
-                                        Box(
-                                            modifier = Modifier.fillMaxSize().background(Color(0xFFE5E7EB)),
-                                            contentAlignment = Alignment.Center
-                                        ) {
-                                            Icon(
-                                                imageVector = Icons.Default.Image,
-                                                contentDescription = null,
-                                                tint = Color.Gray,
-                                                modifier = Modifier.size(18.dp)
+                                    ) {
+                                        if (thumbBitmap != null) {
+                                            Image(
+                                                bitmap = thumbBitmap!!.asImageBitmap(),
+                                                contentDescription = item.name,
+                                                contentScale = ContentScale.Crop,
+                                                modifier = Modifier.fillMaxSize()
                                             )
+                                        } else {
+                                            Box(
+                                                modifier = Modifier.fillMaxSize().background(Color(0xFF374151)),
+                                                contentAlignment = Alignment.Center
+                                            ) {
+                                                Icon(
+                                                    imageVector = Icons.Default.Image,
+                                                    contentDescription = null,
+                                                    tint = Color.LightGray,
+                                                    modifier = Modifier.size(16.dp)
+                                                )
+                                            }
                                         }
                                     }
                                 }
                             }
                         }
-                    }
-                }
-            }
-        }
-    ) { innerPadding ->
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(innerPadding)
-                .background(Color.Black),
-            contentAlignment = Alignment.Center
-        ) {
-            HorizontalPager(
-                state = pagerState,
-                userScrollEnabled = zoomScale <= 1.05f,
-                beyondViewportPageCount = 1,
-                key = { page -> images.getOrNull(page)?.path ?: page.toString() },
-                modifier = Modifier.fillMaxSize()
-            ) { page ->
-                val pageItem = images.getOrNull(page)
-                val pageFile = pageItem?.file ?: (if (page == state.currentIndex) state.currentFile else null)
-                val isCurrent = page == pagerState.currentPage
 
-                if (pageFile != null) {
-                    ImageViewerPageItem(
-                        file = pageFile,
-                        isCurrentPage = isCurrent,
-                        zoomScale = if (isCurrent) zoomScale else 1f,
-                        panOffset = if (isCurrent) panOffset else Offset.Zero,
-                        transformState = transformState,
-                        rotationDegrees = if (isCurrent) rotationDegrees else 0f,
-                        flipHorizontal = if (isCurrent) flipHorizontal else false,
-                        flipVertical = if (isCurrent) flipVertical else false,
-                        cropRatio = if (isCurrent) selectedCropRatio.ratio else null,
-                        composeColorMatrix = composeColorMatrix,
-                        onDoubleTap = {
-                            if (isCurrent) {
-                                if (zoomScale > 1.1f) {
-                                    zoomScale = 1f
-                                    panOffset = Offset.Zero
-                                } else {
-                                    zoomScale = 2.25f
+                        // Modern Quick Action Dock
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 8.dp, vertical = 6.dp),
+                            horizontalArrangement = Arrangement.SpaceEvenly,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            ViewerActionButton(
+                                icon = Icons.Default.Tune,
+                                label = "Edit",
+                                tint = if (hasUnsavedEdits) MiOrange else Color.White,
+                                onClick = { isEditStudioOpen = true }
+                            )
+
+                            ViewerActionButton(
+                                icon = Icons.Default.Share,
+                                label = "Share",
+                                tint = Color.White,
+                                onClick = {
+                                    if (state.currentFile != null) {
+                                        FileOpener.shareFile(context, FileItem(state.currentFile!!))
+                                    }
                                 }
-                            }
-                        },
-                        onBitmapReady = { loadedBmp ->
-                            if (page == pagerState.currentPage) {
-                                activeBitmap = loadedBmp
-                            }
-                        }
-                    )
-                }
-            }
+                            )
 
-            // Left Navigation Button (Previous Picture)
-            if (pagerState.currentPage > 0 && zoomScale <= 1.05f) {
-                Surface(
-                    shape = CircleShape,
-                    color = Color.Black.copy(alpha = 0.5f),
-                    border = BorderStroke(1.dp, Color.White.copy(alpha = 0.35f)),
-                    modifier = Modifier
-                        .align(Alignment.CenterStart)
-                        .padding(start = 12.dp)
-                        .size(46.dp)
-                        .clip(CircleShape)
-                        .clickable {
-                            scope.launch {
-                                pagerState.animateScrollToPage(pagerState.currentPage - 1)
-                            }
-                        }
-                ) {
-                    Box(contentAlignment = Alignment.Center) {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                            contentDescription = "Previous Picture",
-                            tint = Color.White,
-                            modifier = Modifier.size(24.dp)
-                        )
-                    }
-                }
-            }
+                            ViewerActionButton(
+                                icon = Icons.Default.Compress,
+                                label = "Compress",
+                                tint = Color(0xFF38BDF8),
+                                onClick = { showCompressDialog = true }
+                            )
 
-            // Right Navigation Button (Next Picture)
-            if (pagerState.currentPage < pageCount - 1 && zoomScale <= 1.05f) {
-                Surface(
-                    shape = CircleShape,
-                    color = Color.Black.copy(alpha = 0.5f),
-                    border = BorderStroke(1.dp, Color.White.copy(alpha = 0.35f)),
-                    modifier = Modifier
-                        .align(Alignment.CenterEnd)
-                        .padding(end = 12.dp)
-                        .size(46.dp)
-                        .clip(CircleShape)
-                        .clickable {
-                            scope.launch {
-                                pagerState.animateScrollToPage(pagerState.currentPage + 1)
-                            }
-                        }
-                ) {
-                    Box(contentAlignment = Alignment.Center) {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Filled.ArrowForward,
-                            contentDescription = "Next Picture",
-                            tint = Color.White,
-                            modifier = Modifier.size(24.dp)
-                        )
-                    }
-                }
-            }
+                            ViewerActionButton(
+                                icon = Icons.Default.Info,
+                                label = "Details",
+                                tint = Color.White,
+                                onClick = { showInfoDialog = true }
+                            )
 
-            // Floating reset zoom badge when zoomed in
-            if (zoomScale > 1.05f) {
-                Surface(
-                    color = Color.Black.copy(alpha = 0.75f),
-                    shape = RoundedCornerShape(20.dp),
-                    border = BorderStroke(1.dp, Color.White.copy(alpha = 0.35f)),
-                    modifier = Modifier
-                        .align(Alignment.BottomCenter)
-                        .padding(bottom = 20.dp)
-                        .clickable {
-                            zoomScale = 1f
-                            panOffset = Offset.Zero
+                            ViewerActionButton(
+                                icon = Icons.Default.DeleteOutline,
+                                label = "Delete",
+                                tint = Color(0xFFF87171),
+                                onClick = { showDeleteDialog = true }
+                            )
                         }
-                ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 7.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.ZoomOutMap,
-                            contentDescription = "Reset Zoom",
-                            tint = Color.White,
-                            modifier = Modifier.size(16.dp)
-                        )
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text(
-                            text = "${(zoomScale * 100).roundToInt()}% • Double tap to reset",
-                            color = Color.White,
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.Medium
-                        )
                     }
                 }
             }
@@ -913,6 +1084,27 @@ fun ImageViewerScreen(
 }
 
 @Composable
+private fun ViewerActionButton(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    label: String,
+    tint: Color,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        modifier = modifier
+            .clip(RoundedCornerShape(8.dp))
+            .clickable(onClick = onClick)
+            .padding(horizontal = 12.dp, vertical = 6.dp)
+    ) {
+        Icon(imageVector = icon, contentDescription = label, tint = tint, modifier = Modifier.size(22.dp))
+        Spacer(modifier = Modifier.height(4.dp))
+        Text(text = label, color = tint, fontSize = 11.sp, fontWeight = FontWeight.Medium)
+    }
+}
+
+@Composable
 private fun ImageViewerPageItem(
     file: File,
     isCurrentPage: Boolean,
@@ -924,12 +1116,21 @@ private fun ImageViewerPageItem(
     flipVertical: Boolean,
     cropRatio: Float?,
     composeColorMatrix: ColorMatrix,
+    onSingleTap: () -> Unit,
     onDoubleTap: () -> Unit,
     onBitmapReady: (Bitmap) -> Unit
 ) {
     var pageBitmap by remember(file.absolutePath) {
         mutableStateOf<Bitmap?>(FullscreenImageCache.get(file.absolutePath))
     }
+
+    // Instant thumbnail fallback so swiping between photos never shows a blank frame
+    val thumbBitmap by ThumbnailLoader.rememberThumbnailState(
+        file = file,
+        category = FileCategory.IMAGE,
+        targetWidth = 500,
+        targetHeight = 500
+    )
 
     LaunchedEffect(file.absolutePath) {
         val cached = FullscreenImageCache.get(file.absolutePath)
@@ -952,11 +1153,14 @@ private fun ImageViewerPageItem(
         }
     }
 
+    // CRITICAL: Only attach transformable when zoomed in, so horizontal swipes navigate pages smoothly
+    val isZoomed = isCurrentPage && zoomScale > 1.05f
+
     Box(
         modifier = Modifier
             .fillMaxSize()
             .then(
-                if (isCurrentPage) {
+                if (isZoomed) {
                     Modifier.transformable(
                         state = transformState,
                         enabled = true
@@ -964,11 +1168,17 @@ private fun ImageViewerPageItem(
                 } else {
                     Modifier
                 }
-            ),
+            )
+            .pointerInput(isCurrentPage, isZoomed) {
+                detectTapGestures(
+                    onDoubleTap = { onDoubleTap() },
+                    onTap = { onSingleTap() }
+                )
+            },
         contentAlignment = Alignment.Center
     ) {
-        val currentBmp = pageBitmap
-        if (currentBmp != null) {
+        val displayBitmap = pageBitmap ?: thumbBitmap
+        if (displayBitmap != null) {
             val cropModifier = if (isCurrentPage && cropRatio != null) {
                 Modifier.aspectRatio(cropRatio, matchHeightConstraintsFirst = cropRatio < 1f)
             } else {
@@ -976,7 +1186,7 @@ private fun ImageViewerPageItem(
             }
 
             Image(
-                bitmap = currentBmp.asImageBitmap(),
+                bitmap = displayBitmap.asImageBitmap(),
                 contentDescription = file.name,
                 colorFilter = if (isCurrentPage) ColorFilter.colorMatrix(composeColorMatrix) else null,
                 modifier = cropModifier
@@ -986,14 +1196,7 @@ private fun ImageViewerPageItem(
                         rotationZ = if (isCurrentPage) rotationDegrees else 0f,
                         translationX = if (isCurrentPage) panOffset.x else 0f,
                         translationY = if (isCurrentPage) panOffset.y else 0f
-                    )
-                    .pointerInput(isCurrentPage) {
-                        if (isCurrentPage) {
-                            detectTapGestures(
-                                onDoubleTap = { onDoubleTap() }
-                            )
-                        }
-                    },
+                    ),
                 contentScale = if (isCurrentPage && cropRatio != null) ContentScale.Crop else ContentScale.Fit
             )
         } else {
