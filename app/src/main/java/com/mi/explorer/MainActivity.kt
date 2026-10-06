@@ -440,7 +440,6 @@ fun MiMainApp(viewModel: ExplorerViewModel) {
                 Screen.SOCIAL_HUB -> SocialHubScreen(viewModel = viewModel)
                 Screen.WEB_SHARE -> WebShareScreen(viewModel = viewModel)
                 Screen.FILE_SHREDDER -> FileShredderScreen(viewModel = viewModel)
-                Screen.STATUS_SAVER -> StatusSaverScreen(viewModel = viewModel)
                 Screen.SMART_COLLECTIONS -> SmartCollectionsScreen(viewModel = viewModel)
                 Screen.TIME_MACHINE -> TimeMachineScreen(viewModel = viewModel)
                 Screen.APP_INSTALLER -> AppInstallerScreen(viewModel = viewModel)

@@ -30,7 +30,7 @@ data class MiCategory(
     val category: FileCategory? = null,
     val isTools: Boolean = false,
     val isSocial: Boolean = false,
-    val isStatusSaver: Boolean = false,
+    val isVault: Boolean = false,
     val isFavorites: Boolean = false,
     val isCleaner: Boolean = false
 )
@@ -46,7 +46,7 @@ private val categoryRow2 = listOf(
     MiCategory("APKs", Icons.Default.InstallMobile, Color.White, MiGreen, FileCategory.APK),
     MiCategory("Downloads", Icons.Default.Download, Color.White, MiCyan, null),
     MiCategory("Archives", Icons.Default.FolderZip, Color.White, MiAmber, FileCategory.ARCHIVE),
-    MiCategory("Status Saver", Icons.Default.BookmarkAdded, Color.White, Color(0xFF10B981), null, isStatusSaver = true)
+    MiCategory("Vault", Icons.Default.Lock, Color.White, Color(0xFF10B981), null, isVault = true)
 )
 
 private val categoryRow3 = listOf(
@@ -58,14 +58,14 @@ private val categoryRow3 = listOf(
 
 /**
  * Modern 4x3 Category Grid.
- * Includes media categories, Status Saver, Favourites, Cleaner, and Utilities.
+ * Includes media categories, Vault, Favourites, Cleaner, and Utilities.
  */
 @Composable
 fun CategoryGrid(
     onCategoryClick: (FileCategory, String) -> Unit,
     onToolsClick: () -> Unit,
     onSocialClick: () -> Unit,
-    onStatusSaverClick: () -> Unit = {},
+    onVaultClick: () -> Unit = {},
     onFavoritesClick: () -> Unit = {},
     onCleanerClick: () -> Unit = {},
     modifier: Modifier = Modifier
@@ -91,7 +91,7 @@ fun CategoryGrid(
                                 cat = cat,
                                 onToolsClick = onToolsClick,
                                 onSocialClick = onSocialClick,
-                                onStatusSaverClick = onStatusSaverClick,
+                                onVaultClick = onVaultClick,
                                 onFavoritesClick = onFavoritesClick,
                                 onCleanerClick = onCleanerClick,
                                 onCategoryClick = onCategoryClick
@@ -109,7 +109,7 @@ private fun handleCategoryClick(
     cat: MiCategory,
     onToolsClick: () -> Unit,
     onSocialClick: () -> Unit,
-    onStatusSaverClick: () -> Unit,
+    onVaultClick: () -> Unit,
     onFavoritesClick: () -> Unit,
     onCleanerClick: () -> Unit,
     onCategoryClick: (FileCategory, String) -> Unit
@@ -117,7 +117,7 @@ private fun handleCategoryClick(
     when {
         cat.isTools -> onToolsClick()
         cat.isSocial -> onSocialClick()
-        cat.isStatusSaver -> onStatusSaverClick()
+        cat.isVault -> onVaultClick()
         cat.isFavorites -> onFavoritesClick()
         cat.isCleaner -> onCleanerClick()
         cat.category != null -> onCategoryClick(cat.category, cat.title)

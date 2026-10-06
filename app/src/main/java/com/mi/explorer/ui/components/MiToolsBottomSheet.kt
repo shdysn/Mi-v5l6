@@ -51,7 +51,6 @@ fun MiToolsBottomSheet(
     onSocialClick: () -> Unit = {},
     onPinWidgetClick: () -> Unit = {},
     onWebShareClick: () -> Unit = {},
-    onStatusSaverClick: () -> Unit = {},
     onFileShredderClick: () -> Unit = {},
     onSmartCollectionsClick: () -> Unit = {},
     onTimeMachineClick: () -> Unit = {}
@@ -80,14 +79,6 @@ fun MiToolsBottomSheet(
             icon = Icons.Default.Chat,
             iconColor = Color(0xFF25D366),
             onClick = { onDismiss(); onSocialClick() }
-        ),
-        ToolItem(
-            id = "status_saver",
-            title = "Status Saver",
-            subtitle = "Save WhatsApp statuses",
-            icon = Icons.Default.BookmarkAdded,
-            iconColor = Color(0xFF10B981),
-            onClick = { onDismiss(); onStatusSaverClick() }
         ),
         ToolItem(
             id = "vault",

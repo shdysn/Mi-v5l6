@@ -43,7 +43,6 @@ fun MiTopHeader(
     onAmoledToggle: () -> Unit = {},
     isAmoled: Boolean = false,
     onToolsClick: () -> Unit = {},
-    onStatusSaverClick: () -> Unit = {},
     onFavoritesClick: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
@@ -136,14 +135,6 @@ fun MiTopHeader(
                             onClick = {
                                 showMoreMenu = false
                                 onToolsClick()
-                            }
-                        )
-                        DropdownMenuItem(
-                            text = { Text("Status Saver") },
-                            leadingIcon = { Icon(Icons.Default.BookmarkAdded, contentDescription = null, tint = Color(0xFF10B981)) },
-                            onClick = {
-                                showMoreMenu = false
-                                onStatusSaverClick()
                             }
                         )
                         DropdownMenuItem(

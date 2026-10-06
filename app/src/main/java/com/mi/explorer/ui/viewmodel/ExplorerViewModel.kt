@@ -49,7 +49,6 @@ enum class Screen {
     SOCIAL_HUB,
     WEB_SHARE,
     FILE_SHREDDER,
-    STATUS_SAVER,
     SMART_COLLECTIONS,
     TIME_MACHINE,
     APP_INSTALLER,
@@ -381,14 +380,6 @@ class ExplorerViewModel(application: Application) : AndroidViewModel(application
     val shredTargets = MutableStateFlow<List<File>>(emptyList())
     val isShredding = MutableStateFlow(false)
     val shredProgress = MutableStateFlow(ShredProgress())
-
-    // 10. WhatsApp / Social Status Saver & Sent Media Cleaner (Lazy)
-    private val _socialStatusRepository = lazy { SocialStatusRepository(application) }
-    val socialStatusRepository get() = _socialStatusRepository.value
-    val activeStatuses = MutableStateFlow<List<StatusMediaItem>>(emptyList())
-    val savedStatuses = MutableStateFlow<List<StatusMediaItem>>(emptyList())
-    val sentMediaSummary = MutableStateFlow(SentMediaSummary(0, 0L, emptyList()))
-    val isStatusLoading = MutableStateFlow(false)
 
     // 11. Smart Collections / Virtual Folders (Lazy)
     private val _smartCollectionsRepository = lazy { SmartCollectionsRepository(application) }
@@ -2638,46 +2629,6 @@ class ExplorerViewModel(application: Application) : AndroidViewModel(application
             } else {
                 showMessage("Shredding error: ${result.exceptionOrNull()?.message}")
             }
-        }
-    }
-
-    // ==========================================
-    // 10. SOCIAL & STATUS SAVER METHODS
-    // ==========================================
-
-    fun openStatusSaver() {
-        navigateToScreen(Screen.STATUS_SAVER)
-        refreshStatuses()
-    }
-
-    fun refreshStatuses() {
-        viewModelScope.launch {
-            isStatusLoading.value = true
-            activeStatuses.value = socialStatusRepository.getActiveStatuses()
-            savedStatuses.value = socialStatusRepository.getSavedStatuses()
-            sentMediaSummary.value = socialStatusRepository.scanSentMedia()
-            isStatusLoading.value = false
-        }
-    }
-
-    fun saveStatusItem(file: File) {
-        viewModelScope.launch {
-            val result = socialStatusRepository.saveStatusToGallery(file)
-            if (result.isSuccess) {
-                showMessage("Status saved to Pictures/StatusSaver & Gallery!")
-                savedStatuses.value = socialStatusRepository.getSavedStatuses()
-            } else {
-                showMessage("Failed to save status: ${result.exceptionOrNull()?.message}")
-            }
-        }
-    }
-
-    fun cleanSentMediaFiles(files: List<File>) {
-        viewModelScope.launch {
-            val cleaned = socialStatusRepository.cleanSentMedia(files)
-            showMessage("Cleaned $cleaned redundant sent files!")
-            sentMediaSummary.value = socialStatusRepository.scanSentMedia()
-            refreshStorage()
         }
     }
 

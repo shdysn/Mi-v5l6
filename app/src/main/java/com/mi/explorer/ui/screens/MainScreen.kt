@@ -170,7 +170,6 @@ fun MainScreen(
                     onAmoledToggle = { viewModel.toggleAmoledMode() },
                     isAmoled = isAmoled,
                     onToolsClick = { showToolsSheet = true },
-                    onStatusSaverClick = { viewModel.openStatusSaver() },
                     onFavoritesClick = { showFavoritesSheet = true }
                 )
             }
@@ -426,7 +425,6 @@ fun MainScreen(
                         onDuplicatesClick = { viewModel.openDuplicateFinder() },
                         onAnalyzerClick = { viewModel.openStorageAnalyzer() },
                         onWebShareClick = { viewModel.openWebShare() },
-                        onStatusSaverClick = { viewModel.openStatusSaver() },
                         onFileShredderClick = { viewModel.openFileShredder() },
                         onSmartCollectionsClick = { viewModel.openSmartCollections() },
                         onTimeMachineClick = { viewModel.openTimeMachine() },
@@ -851,7 +849,6 @@ fun MainScreen(
                 viewModel.showMessage(if (ok) "Home Screen Storage Widget prompt opened!" else "Long-press Home Screen -> Widgets -> Cent File Manager")
             },
             onWebShareClick = { viewModel.openWebShare() },
-            onStatusSaverClick = { viewModel.openStatusSaver() },
             onFileShredderClick = { viewModel.openFileShredder() },
             onSmartCollectionsClick = { viewModel.openSmartCollections() },
             onTimeMachineClick = { viewModel.openTimeMachine() }
@@ -1393,7 +1390,6 @@ fun StorageTabContent(
     onDuplicatesClick: () -> Unit,
     onAnalyzerClick: () -> Unit,
     onWebShareClick: () -> Unit = {},
-    onStatusSaverClick: () -> Unit = {},
     onFileShredderClick: () -> Unit = {},
     onSmartCollectionsClick: () -> Unit = {},
     onTimeMachineClick: () -> Unit = {},
@@ -1460,13 +1456,13 @@ fun StorageTabContent(
                 )
             }
 
-            // 2. 12-tile Cent Category Grid (with Media, Status Saver, Favourites, Cleaner, and Utilities)
+            // 2. 12-tile Cent Category Grid (with Media, Vault, Favourites, Cleaner, and Utilities)
             item {
                 CategoryGrid(
                     onCategoryClick = onCategoryClick,
                     onToolsClick = onToolsClick,
                     onSocialClick = onSocialClick,
-                    onStatusSaverClick = onStatusSaverClick,
+                    onVaultClick = onVaultClick,
                     onFavoritesClick = onFavoritesClick,
                     onCleanerClick = onCleanClick,
                     modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
