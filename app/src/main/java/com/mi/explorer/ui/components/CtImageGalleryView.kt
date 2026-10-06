@@ -62,9 +62,36 @@ data class GalleryAlbum(
     val totalSize: Long
 )
 
-@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 fun MiImageGalleryView(
+    items: List<FileItem>,
+    favorites: List<FavoriteItem>,
+    onOpenImage: (FileItem, List<FileItem>) -> Unit,
+    onMenuAction: (String, FileItem) -> Unit,
+    onToggleFavorite: (File) -> Unit,
+    onBatchDelete: (List<FileItem>) -> Unit,
+    onBatchShare: (List<FileItem>) -> Unit,
+    onBatchFavorite: (List<FileItem>) -> Unit,
+    onBatchVault: (List<FileItem>) -> Unit,
+    onBatchCleanExif: (List<FileItem>) -> Unit,
+    modifier: Modifier = Modifier
+) = CtImageGalleryView(
+    items = items,
+    favorites = favorites,
+    onOpenImage = onOpenImage,
+    onMenuAction = onMenuAction,
+    onToggleFavorite = onToggleFavorite,
+    onBatchDelete = onBatchDelete,
+    onBatchShare = onBatchShare,
+    onBatchFavorite = onBatchFavorite,
+    onBatchVault = onBatchVault,
+    onBatchCleanExif = onBatchCleanExif,
+    modifier = modifier
+)
+
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
+@Composable
+fun CtImageGalleryView(
     items: List<FileItem>,
     favorites: List<FavoriteItem>,
     onOpenImage: (FileItem, List<FileItem>) -> Unit,

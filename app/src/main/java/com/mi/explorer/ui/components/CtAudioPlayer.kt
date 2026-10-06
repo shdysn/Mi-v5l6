@@ -34,6 +34,23 @@ fun MiMiniAudioBar(
     onNext: () -> Unit,
     onClose: () -> Unit,
     modifier: Modifier = Modifier
+) = CtMiniAudioBar(
+    state = state,
+    onExpand = onExpand,
+    onPlayPause = onPlayPause,
+    onNext = onNext,
+    onClose = onClose,
+    modifier = modifier
+)
+
+@Composable
+fun CtMiniAudioBar(
+    state: AudioPlayerState,
+    onExpand: () -> Unit,
+    onPlayPause: () -> Unit,
+    onNext: () -> Unit,
+    onClose: () -> Unit,
+    modifier: Modifier = Modifier
 ) {
     if (!state.isVisible) return
 
@@ -136,9 +153,20 @@ fun MiMiniAudioBar(
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MiFullAudioPlayerSheet(
+    state: AudioPlayerState,
+    viewModel: ExplorerViewModel,
+    onDismiss: () -> Unit
+) = CtFullAudioPlayerSheet(
+    state = state,
+    viewModel = viewModel,
+    onDismiss = onDismiss
+)
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun CtFullAudioPlayerSheet(
     state: AudioPlayerState,
     viewModel: ExplorerViewModel,
     onDismiss: () -> Unit

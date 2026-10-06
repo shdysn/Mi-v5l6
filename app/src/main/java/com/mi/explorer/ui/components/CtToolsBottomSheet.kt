@@ -20,7 +20,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.mi.explorer.ui.theme.MiOrange
+import com.mi.explorer.ui.theme.CtOrange
 
 data class ToolItem(
     val id: String,
@@ -31,7 +31,6 @@ data class ToolItem(
     val onClick: () -> Unit
 )
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MiToolsBottomSheet(
     onDismiss: () -> Unit,
@@ -52,7 +51,54 @@ fun MiToolsBottomSheet(
     onWebShareClick: () -> Unit = {},
     onFileShredderClick: () -> Unit = {},
     onSmartCollectionsClick: () -> Unit = {},
-    onTimeMachineClick: () -> Unit = {}
+    onTimeMachineClick: () -> Unit = {},
+    onAboutClick: () -> Unit = {}
+) = CtToolsBottomSheet(
+    onDismiss = onDismiss,
+    onVaultClick = onVaultClick,
+    onFastShareClick = onFastShareClick,
+    onNetworkDrivesClick = onNetworkDrivesClick,
+    onTrashClick = onTrashClick,
+    onAnalyzerClick = onAnalyzerClick,
+    onDuplicatesClick = onDuplicatesClick,
+    onCleanerClick = onCleanerClick,
+    onAppManagerClick = onAppManagerClick,
+    onAppInstallerClick = onAppInstallerClick,
+    onFtpClick = onFtpClick,
+    onDualPaneToggle = onDualPaneToggle,
+    isDualPaneActive = isDualPaneActive,
+    onSocialClick = onSocialClick,
+    onPinWidgetClick = onPinWidgetClick,
+    onWebShareClick = onWebShareClick,
+    onFileShredderClick = onFileShredderClick,
+    onSmartCollectionsClick = onSmartCollectionsClick,
+    onTimeMachineClick = onTimeMachineClick,
+    onAboutClick = onAboutClick
+)
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun CtToolsBottomSheet(
+    onDismiss: () -> Unit,
+    onVaultClick: () -> Unit,
+    onFastShareClick: () -> Unit,
+    onNetworkDrivesClick: () -> Unit,
+    onTrashClick: () -> Unit,
+    onAnalyzerClick: () -> Unit,
+    onDuplicatesClick: () -> Unit,
+    onCleanerClick: () -> Unit,
+    onAppManagerClick: () -> Unit,
+    onAppInstallerClick: () -> Unit = {},
+    onFtpClick: () -> Unit,
+    onDualPaneToggle: () -> Unit,
+    isDualPaneActive: Boolean = false,
+    onSocialClick: () -> Unit = {},
+    onPinWidgetClick: () -> Unit = {},
+    onWebShareClick: () -> Unit = {},
+    onFileShredderClick: () -> Unit = {},
+    onSmartCollectionsClick: () -> Unit = {},
+    onTimeMachineClick: () -> Unit = {},
+    onAboutClick: () -> Unit = {}
 ) {
     val tools = listOf(
         ToolItem(
@@ -84,7 +130,7 @@ fun MiToolsBottomSheet(
             title = "Private Vault",
             subtitle = "Fingerprint & PIN safe",
             icon = Icons.Default.Lock,
-            iconColor = MiOrange,
+            iconColor = CtOrange,
             onClick = { onDismiss(); onVaultClick() }
         ),
         ToolItem(
@@ -190,6 +236,14 @@ fun MiToolsBottomSheet(
             icon = Icons.Default.VerticalSplit,
             iconColor = Color(0xFFEC4899),
             onClick = { onDismiss(); onDualPaneToggle() }
+        ),
+        ToolItem(
+            id = "about_privacy",
+            title = "About & Privacy",
+            subtitle = "Policy & disclosures",
+            icon = Icons.Default.Shield,
+            iconColor = Color(0xFF10B981),
+            onClick = { onDismiss(); onAboutClick() }
         )
     )
 

@@ -2,32 +2,53 @@ package com.mi.explorer.ui.theme
 
 import androidx.compose.ui.graphics.Color
 
-val MiOrange = Color(0xFFFF6700)
-val MiOrangeDark = Color(0xFFE65100)
-val MiOrangeLight = Color(0xFFFF8533)
-val MiOrangeSubtle = Color(0xFFFFF2E8)
+val CtOrange = Color(0xFFFF6700)
+val CtOrangeDark = Color(0xFFE65100)
+val CtOrangeLight = Color(0xFFFF8533)
+val CtOrangeSubtle = Color(0xFFFFF2E8)
 
-val MiBlue = Color(0xFF2196F3)
-val MiBlueLight = Color(0xFFE3F2FD)
+val CtBlue = Color(0xFF2196F3)
+val CtBlueLight = Color(0xFFE3F2FD)
 
-val MiPurple = Color(0xFF7C4DFF)
-val MiPurpleLight = Color(0xFFEDE7F6)
+val CtPurple = Color(0xFF7C4DFF)
+val CtPurpleLight = Color(0xFFEDE7F6)
 
-val MiYellow = Color(0xFFFFA726)
-val MiYellowLight = Color(0xFFFFF3E0)
+val CtYellow = Color(0xFFFFA726)
+val CtYellowLight = Color(0xFFFFF3E0)
 
-val MiRed = Color(0xFFFF5252)
-val MiRedLight = Color(0xFFFFEBEE)
+val CtRed = Color(0xFFFF5252)
+val CtRedLight = Color(0xFFFFEBEE)
 
-val MiGreen = Color(0xFF4CAF50)
-val MiGreenLight = Color(0xFFE8F5E9)
+val CtGreen = Color(0xFF4CAF50)
+val CtGreenLight = Color(0xFFE8F5E9)
 
-val MiCyan = Color(0xFF00BCD4)
-val MiCyanLight = Color(0xFFE0F7FA)
+val CtCyan = Color(0xFF00BCD4)
+val CtCyanLight = Color(0xFFE0F7FA)
 
-val MiAmber = Color(0xFFFF9800)
-val MiMint = Color(0xFF00BFA5)
-val MiMintLight = Color(0xFFE0F2F1)
+val CtAmber = Color(0xFFFF9800)
+val CtMint = Color(0xFF00BFA5)
+val CtMintLight = Color(0xFFE0F2F1)
+
+// Backward compatibility aliases
+val MiOrange = CtOrange
+val MiOrangeDark = CtOrangeDark
+val MiOrangeLight = CtOrangeLight
+val MiOrangeSubtle = CtOrangeSubtle
+val MiBlue = CtBlue
+val MiBlueLight = CtBlueLight
+val MiPurple = CtPurple
+val MiPurpleLight = CtPurpleLight
+val MiYellow = CtYellow
+val MiYellowLight = CtYellowLight
+val MiRed = CtRed
+val MiRedLight = CtRedLight
+val MiGreen = CtGreen
+val MiGreenLight = CtGreenLight
+val MiCyan = CtCyan
+val MiCyanLight = CtCyanLight
+val MiAmber = CtAmber
+val MiMint = CtMint
+val MiMintLight = CtMintLight
 
 val Gray50 = Color(0xFFF9FAFB)
 val Gray100 = Color(0xFFF3F4F6)

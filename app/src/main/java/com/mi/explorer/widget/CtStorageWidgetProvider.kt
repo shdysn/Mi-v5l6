@@ -13,7 +13,9 @@ import com.mi.explorer.MainActivity
 import com.mi.explorer.R
 import com.mi.explorer.data.model.FileItem
 
-class MiStorageWidgetProvider : AppWidgetProvider() {
+typealias MiStorageWidgetProvider = CtStorageWidgetProvider
+
+class CtStorageWidgetProvider : AppWidgetProvider() {
 
     override fun onUpdate(
         context: Context,
@@ -33,7 +35,7 @@ class MiStorageWidgetProvider : AppWidgetProvider() {
 
         fun updateAllWidgets(context: Context) {
             val manager = AppWidgetManager.getInstance(context)
-            val ids = manager.getAppWidgetIds(ComponentName(context, MiStorageWidgetProvider::class.java))
+            val ids = manager.getAppWidgetIds(ComponentName(context, CtStorageWidgetProvider::class.java))
             for (id in ids) {
                 updateAppWidget(context, manager, id)
             }
@@ -44,7 +46,7 @@ class MiStorageWidgetProvider : AppWidgetProvider() {
             appWidgetManager: AppWidgetManager,
             appWidgetId: Int
         ) {
-            val views = RemoteViews(context.packageName, R.layout.widget_mi_storage)
+            val views = RemoteViews(context.packageName, R.layout.widget_ct_storage)
 
             val (usedBytes, totalBytes, percent) = try {
                 val stat = StatFs(Environment.getExternalStorageDirectory().path)

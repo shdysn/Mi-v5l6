@@ -90,6 +90,7 @@ fun MainScreen(
     var showBatchRenameDialog by remember { mutableStateOf(false) }
     var tagTarget by remember { mutableStateOf<FileItem?>(null) }
     var exifCleanerTarget by remember { mutableStateOf<FileItem?>(null) }
+    var showAboutDialog by remember { mutableStateOf(false) }
 
     val context = LocalContext.current
     BackHandler(enabled = storageState.isSelectionMode) {
@@ -849,7 +850,8 @@ fun MainScreen(
             onWebShareClick = { viewModel.openWebShare() },
             onFileShredderClick = { viewModel.openFileShredder() },
             onSmartCollectionsClick = { viewModel.openSmartCollections() },
-            onTimeMachineClick = { viewModel.openTimeMachine() }
+            onTimeMachineClick = { viewModel.openTimeMachine() },
+            onAboutClick = { showAboutDialog = true }
         )
     }
 
@@ -873,6 +875,12 @@ fun MainScreen(
             onAddCurrentToFavorites = {
                 viewModel.toggleFavorite(storageState.currentDir)
             }
+        )
+    }
+
+    if (showAboutDialog) {
+        AboutPrivacyDialog(
+            onDismiss = { showAboutDialog = false }
         )
     }
 }

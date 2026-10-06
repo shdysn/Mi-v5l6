@@ -44,11 +44,57 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.mi.explorer.data.model.FileItem
 
+@Composable
+fun MiSelectionTopBar(
+    selectedCount: Int,
+    subtitle: String,
+    isAllSelected: Boolean,
+    onClose: () -> Unit,
+    onToggleSelectAll: () -> Unit,
+    modifier: Modifier = Modifier
+) = CtSelectionTopBar(
+    selectedCount = selectedCount,
+    subtitle = subtitle,
+    isAllSelected = isAllSelected,
+    onClose = onClose,
+    onToggleSelectAll = onToggleSelectAll,
+    modifier = modifier
+)
+
+@Composable
+fun MiSelectionBottomBar(
+    selectedItems: List<FileItem>,
+    onSend: () -> Unit,
+    onMove: () -> Unit,
+    onDelete: () -> Unit,
+    onCopyToClipboard: () -> Unit,
+    onCopy: () -> Unit,
+    onMakePrivate: () -> Unit,
+    onToggleFavorite: () -> Unit,
+    onRename: () -> Unit,
+    onOpenInAnotherApp: () -> Unit,
+    onDetails: () -> Unit,
+    modifier: Modifier = Modifier
+) = CtSelectionBottomBar(
+    selectedItems = selectedItems,
+    onSend = onSend,
+    onMove = onMove,
+    onDelete = onDelete,
+    onCopyToClipboard = onCopyToClipboard,
+    onCopy = onCopy,
+    onMakePrivate = onMakePrivate,
+    onToggleFavorite = onToggleFavorite,
+    onRename = onRename,
+    onOpenInAnotherApp = onOpenInAnotherApp,
+    onDetails = onDetails,
+    modifier = modifier
+)
+
 /**
  * Top bar displayed when 1 or more files are selected.
  */
 @Composable
-fun MiSelectionTopBar(
+fun CtSelectionTopBar(
     selectedCount: Int,
     subtitle: String,
     isAllSelected: Boolean,
@@ -102,34 +148,12 @@ fun MiSelectionTopBar(
                 }
             }
 
-            Spacer(modifier = Modifier.height(2.dp))
-
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(start = 48.dp, end = 4.dp, bottom = 4.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
-                Text(
-                    text = subtitle,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-
-                Surface(
-                    onClick = onToggleSelectAll,
-                    shape = RoundedCornerShape(14.dp),
-                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f)
-                ) {
-                    Text(
-                        text = if (isAllSelected) "Deselect all" else "Select all",
-                        style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold),
-                        color = MaterialTheme.colorScheme.onSurface,
-                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp)
-                    )
-                }
-            }
+            Text(
+                text = subtitle,
+                style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(start = 48.dp, bottom = 4.dp)
+            )
         }
     }
 }
@@ -138,7 +162,7 @@ fun MiSelectionTopBar(
  * Bottom action bar shown in selection mode (Send, Move, Delete, More).
  */
 @Composable
-fun MiSelectionBottomBar(
+fun CtSelectionBottomBar(
     selectedItems: List<FileItem>,
     onSend: () -> Unit,
     onMove: () -> Unit,
@@ -189,8 +213,8 @@ fun MiSelectionBottomBar(
                 onClick = onDelete
             )
 
-            // 4. More (with Exact Dropdown Popup)
-            Box(contentAlignment = Alignment.BottomCenter) {
+            // 4. More Options
+            Box {
                 SelectionActionItem(
                     icon = Icons.Outlined.MoreHoriz,
                     label = "More",
@@ -199,19 +223,8 @@ fun MiSelectionBottomBar(
 
                 DropdownMenu(
                     expanded = showMoreMenu,
-                    onDismissRequest = { showMoreMenu = false },
-                    containerColor = Color.White,
-                    modifier = Modifier
-                        .width(220.dp)
-                        .background(Color.White, RoundedCornerShape(16.dp))
+                    onDismissRequest = { showMoreMenu = false }
                 ) {
-                    DropdownMenuItem(
-                        text = { Text("Copy to clipboard", fontSize = 15.sp) },
-                        onClick = {
-                            showMoreMenu = false
-                            onCopyToClipboard()
-                        }
-                    )
                     DropdownMenuItem(
                         text = { Text("Copy", fontSize = 15.sp) },
                         onClick = {
@@ -220,27 +233,34 @@ fun MiSelectionBottomBar(
                         }
                     )
                     DropdownMenuItem(
-                        text = { Text("Make private", fontSize = 15.sp) },
+                        text = { Text("Copy Path", fontSize = 15.sp) },
+                        onClick = {
+                            showMoreMenu = false
+                            onCopyToClipboard()
+                        }
+                    )
+                    DropdownMenuItem(
+                        text = { Text("Add to Private Vault", fontSize = 15.sp) },
                         onClick = {
                             showMoreMenu = false
                             onMakePrivate()
                         }
                     )
-                    DropdownMenuItem(
-                        text = { Text("Add to favorites", fontSize = 15.sp) },
-                        onClick = {
-                            showMoreMenu = false
-                            onToggleFavorite()
-                        }
-                    )
-                    DropdownMenuItem(
-                        text = { Text("Rename", fontSize = 15.sp) },
-                        onClick = {
-                            showMoreMenu = false
-                            onRename()
-                        }
-                    )
-                    if (selectedItems.size == 1 && !selectedItems.first().isDirectory) {
+                    if (selectedItems.size == 1) {
+                        DropdownMenuItem(
+                            text = { Text("Rename", fontSize = 15.sp) },
+                            onClick = {
+                                showMoreMenu = false
+                                onRename()
+                            }
+                        )
+                        DropdownMenuItem(
+                            text = { Text("Favorite", fontSize = 15.sp) },
+                            onClick = {
+                                showMoreMenu = false
+                                onToggleFavorite()
+                            }
+                        )
                         DropdownMenuItem(
                             text = { Text("Open in another app", fontSize = 15.sp) },
                             onClick = {

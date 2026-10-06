@@ -18,17 +18,60 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.mi.explorer.ui.theme.MiOrange
+import com.mi.explorer.ui.theme.CtOrange
 
-enum class MiTab {
+enum class CtTab {
     RECENT,
     STORAGE
 }
 
+typealias MiTab = CtTab
+
 @Composable
 fun MiTopHeader(
-    selectedTab: MiTab,
-    onTabSelected: (MiTab) -> Unit,
+    selectedTab: CtTab,
+    onTabSelected: (CtTab) -> Unit,
+    onSearchClick: () -> Unit,
+    onCleanerClick: () -> Unit,
+    onFtpClick: () -> Unit,
+    onVaultClick: () -> Unit = {},
+    onDuplicatesClick: () -> Unit = {},
+    onAnalyzerClick: () -> Unit = {},
+    onTrashClick: () -> Unit = {},
+    onNetworkDrivesClick: () -> Unit = {},
+    onFastShareClick: () -> Unit = {},
+    onDualPaneToggle: () -> Unit = {},
+    isDualPaneActive: Boolean = false,
+    onAmoledToggle: () -> Unit = {},
+    isAmoled: Boolean = false,
+    onToolsClick: () -> Unit = {},
+    onFavoritesClick: () -> Unit = {},
+    modifier: Modifier = Modifier
+) = CtTopHeader(
+    selectedTab = selectedTab,
+    onTabSelected = onTabSelected,
+    onSearchClick = onSearchClick,
+    onCleanerClick = onCleanerClick,
+    onFtpClick = onFtpClick,
+    onVaultClick = onVaultClick,
+    onDuplicatesClick = onDuplicatesClick,
+    onAnalyzerClick = onAnalyzerClick,
+    onTrashClick = onTrashClick,
+    onNetworkDrivesClick = onNetworkDrivesClick,
+    onFastShareClick = onFastShareClick,
+    onDualPaneToggle = onDualPaneToggle,
+    isDualPaneActive = isDualPaneActive,
+    onAmoledToggle = onAmoledToggle,
+    isAmoled = isAmoled,
+    onToolsClick = onToolsClick,
+    onFavoritesClick = onFavoritesClick,
+    modifier = modifier
+)
+
+@Composable
+fun CtTopHeader(
+    selectedTab: CtTab,
+    onTabSelected: (CtTab) -> Unit,
     onSearchClick: () -> Unit,
     onCleanerClick: () -> Unit,
     onFtpClick: () -> Unit,
@@ -67,16 +110,16 @@ fun MiTopHeader(
                     .padding(4.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                MiTabPill(
+                CtTabPill(
                     text = "Recent",
-                    isSelected = selectedTab == MiTab.RECENT,
-                    onClick = { onTabSelected(MiTab.RECENT) },
+                    isSelected = selectedTab == CtTab.RECENT,
+                    onClick = { onTabSelected(CtTab.RECENT) },
                     modifier = Modifier.testTag("tab_recent")
                 )
-                MiTabPill(
+                CtTabPill(
                     text = "Storage",
-                    isSelected = selectedTab == MiTab.STORAGE,
-                    onClick = { onTabSelected(MiTab.STORAGE) },
+                    isSelected = selectedTab == CtTab.STORAGE,
+                    onClick = { onTabSelected(CtTab.STORAGE) },
                     modifier = Modifier.testTag("tab_storage")
                 )
             }
@@ -90,7 +133,7 @@ fun MiTopHeader(
                     Icon(
                         imageVector = Icons.Default.VerticalSplit,
                         contentDescription = "Dual Pane Split Screen",
-                        tint = if (isDualPaneActive) MiOrange else MaterialTheme.colorScheme.onSurfaceVariant,
+                        tint = if (isDualPaneActive) CtOrange else MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.size(20.dp)
                     )
                 }
@@ -148,7 +191,7 @@ fun MiTopHeader(
                         HorizontalDivider()
                         DropdownMenuItem(
                             text = { Text("Deep Cleaner") },
-                            leadingIcon = { Icon(Icons.Default.CleaningServices, contentDescription = null, tint = MiOrange) },
+                            leadingIcon = { Icon(Icons.Default.CleaningServices, contentDescription = null, tint = CtOrange) },
                             onClick = {
                                 showMoreMenu = false
                                 onCleanerClick()
@@ -181,7 +224,7 @@ fun MiTopHeader(
                         HorizontalDivider()
                         DropdownMenuItem(
                             text = { Text("Private Vault") },
-                            leadingIcon = { Icon(Icons.Default.Lock, contentDescription = null, tint = MiOrange) },
+                            leadingIcon = { Icon(Icons.Default.Lock, contentDescription = null, tint = CtOrange) },
                             onClick = {
                                 showMoreMenu = false
                                 onVaultClick()
@@ -214,7 +257,7 @@ fun MiTopHeader(
                         HorizontalDivider()
                         DropdownMenuItem(
                             text = { Text("Theme: Clean White") },
-                            leadingIcon = { Icon(Icons.Default.LightMode, contentDescription = null, tint = MiOrange) },
+                            leadingIcon = { Icon(Icons.Default.LightMode, contentDescription = null, tint = CtOrange) },
                             onClick = {
                                 showMoreMenu = false
                             }
@@ -227,7 +270,7 @@ fun MiTopHeader(
 }
 
 @Composable
-private fun MiTabPill(
+private fun CtTabPill(
     text: String,
     isSelected: Boolean,
     onClick: () -> Unit,
@@ -238,7 +281,7 @@ private fun MiTabPill(
         label = "pillBg"
     )
     val textColor by animateColorAsState(
-        targetValue = if (isSelected) MiOrange else MaterialTheme.colorScheme.onSurfaceVariant,
+        targetValue = if (isSelected) CtOrange else MaterialTheme.colorScheme.onSurfaceVariant,
         label = "pillText"
     )
 

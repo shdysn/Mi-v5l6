@@ -55,7 +55,7 @@ class MainActivity : ComponentActivity() {
         setContent {
             val isAmoled by viewModel.isAmoledMode.collectAsStateWithLifecycle()
             CentExplorerTheme(amoledMode = isAmoled) {
-                MiMainApp(viewModel = viewModel)
+                CtMainApp(viewModel = viewModel)
             }
         }
     }
@@ -122,13 +122,13 @@ class MainActivity : ComponentActivity() {
         }
 
         // 1. Check Home Screen Storage Widget Actions
-        val widgetTarget = intent.getStringExtra(com.mi.explorer.widget.MiStorageWidgetProvider.EXTRA_WIDGET_TARGET)
+        val widgetTarget = intent.getStringExtra(com.mi.explorer.widget.CtStorageWidgetProvider.EXTRA_WIDGET_TARGET)
         if (!widgetTarget.isNullOrBlank()) {
             when (widgetTarget) {
-                com.mi.explorer.widget.MiStorageWidgetProvider.TARGET_CLEANER -> viewModel.openCleaner()
-                com.mi.explorer.widget.MiStorageWidgetProvider.TARGET_FAST_SHARE -> viewModel.openFastShare()
-                com.mi.explorer.widget.MiStorageWidgetProvider.TARGET_STORAGE -> {
-                    viewModel.selectTab(com.mi.explorer.ui.components.MiTab.STORAGE)
+                com.mi.explorer.widget.CtStorageWidgetProvider.TARGET_CLEANER -> viewModel.openCleaner()
+                com.mi.explorer.widget.CtStorageWidgetProvider.TARGET_FAST_SHARE -> viewModel.openFastShare()
+                com.mi.explorer.widget.CtStorageWidgetProvider.TARGET_STORAGE -> {
+                    viewModel.selectTab(com.mi.explorer.ui.components.CtTab.STORAGE)
                     viewModel.navigateToScreen(Screen.MAIN)
                 }
             }
@@ -141,7 +141,7 @@ class MainActivity : ComponentActivity() {
             val targetFile = java.io.File(shortcutPath)
             if (targetFile.exists()) {
                 if (targetFile.isDirectory) {
-                    viewModel.selectTab(com.mi.explorer.ui.components.MiTab.STORAGE)
+                    viewModel.selectTab(com.mi.explorer.ui.components.CtTab.STORAGE)
                     viewModel.navigateToScreen(Screen.MAIN)
                     viewModel.loadDirectory(targetFile, addToHistory = true)
                 } else {
@@ -276,7 +276,10 @@ class MainActivity : ComponentActivity() {
 }
 
 @Composable
-fun MiMainApp(viewModel: ExplorerViewModel) {
+fun MiMainApp(viewModel: ExplorerViewModel) = CtMainApp(viewModel)
+
+@Composable
+fun CtMainApp(viewModel: ExplorerViewModel) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
 
