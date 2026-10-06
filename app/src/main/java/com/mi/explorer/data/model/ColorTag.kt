@@ -1,4 +1,4 @@
-package com.mi.explorer.data.model
+package com.ct.explorer.data.model
 
 import androidx.compose.ui.graphics.Color
 

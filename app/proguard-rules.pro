@@ -4,11 +4,11 @@
 }
 
 # Keep app classes and models
--keep class com.mi.explorer.** { *; }
+-keep class com.ct.explorer.** { *; }
 
 # Keep broadcast receivers & widget
--keep class com.mi.explorer.utils.PackageInstallerStatusReceiver { *; }
--keep class com.mi.explorer.widget.MiStorageWidgetProvider { *; }
+-keep class com.ct.explorer.utils.PackageInstallerStatusReceiver { *; }
+-keep class com.ct.explorer.widget.MiStorageWidgetProvider { *; }
 
 # Keep annotations & signature attributes
 -keepattributes *Annotation*,Signature,InnerClasses,EnclosingMethod

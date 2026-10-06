@@ -4,7 +4,7 @@ plugins {
 }
 
 android {
-    namespace = "com.mi.explorer"
+    namespace = "com.ct.explorer"
     compileSdk = 36
 
     defaultConfig {

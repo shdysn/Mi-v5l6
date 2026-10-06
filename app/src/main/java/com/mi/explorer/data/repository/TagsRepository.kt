@@ -1,7 +1,7 @@
-package com.mi.explorer.data.repository
+package com.ct.explorer.data.repository
 
 import android.content.Context
-import com.mi.explorer.data.model.ColorTag
+import com.ct.explorer.data.model.ColorTag
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONArray

@@ -1,4 +1,4 @@
-package com.mi.explorer.data.repository
+package com.ct.explorer.data.repository
 
 import android.content.Context
 import android.os.Environment
@@ -7,15 +7,15 @@ import android.provider.MediaStore
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import com.mi.explorer.data.model.FileCategory
-import com.mi.explorer.data.model.FileItem
-import com.mi.explorer.data.model.SortType
-import com.mi.explorer.data.model.StorageSpace
-import com.mi.explorer.data.model.SocialFolderEntry
-import com.mi.explorer.data.model.SocialAppGroup
-import com.mi.explorer.data.model.SocialFolderType
-import com.mi.explorer.data.model.StorageVolumeItem
-import com.mi.explorer.data.model.VolumeType
+import com.ct.explorer.data.model.FileCategory
+import com.ct.explorer.data.model.FileItem
+import com.ct.explorer.data.model.SortType
+import com.ct.explorer.data.model.StorageSpace
+import com.ct.explorer.data.model.SocialFolderEntry
+import com.ct.explorer.data.model.SocialAppGroup
+import com.ct.explorer.data.model.SocialFolderType
+import com.ct.explorer.data.model.StorageVolumeItem
+import com.ct.explorer.data.model.VolumeType
 import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
@@ -369,7 +369,7 @@ class FileRepository(private val context: Context) {
             }
         }
 
-        val sorted = com.mi.explorer.data.model.sortFileList(items, sortType, foldersOnTop)
+        val sorted = com.ct.explorer.data.model.sortFileList(items, sortType, foldersOnTop)
         if (directory.absolutePath == rootStorageDirectory.absolutePath && !isSearching && !showHidden) {
             cachedRootItems = sorted
         }

@@ -1,4 +1,4 @@
-package com.mi.explorer.data.model
+package com.ct.explorer.data.model
 
 import android.graphics.drawable.Drawable
 

@@ -1,4 +1,4 @@
-package com.mi.explorer
+package com.ct.explorer
 
 import android.Manifest
 import android.content.Intent
@@ -31,16 +31,16 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import com.mi.explorer.data.model.FileItem
-import com.mi.explorer.ui.components.ApkInstallDialog
-import com.mi.explorer.ui.components.ChecksumDialog
-import com.mi.explorer.ui.components.MiFullAudioPlayerSheet
-import com.mi.explorer.ui.components.MiMiniAudioBar
-import com.mi.explorer.ui.screens.*
-import com.mi.explorer.ui.theme.CentExplorerTheme
-import com.mi.explorer.ui.viewmodel.ExplorerViewModel
-import com.mi.explorer.ui.viewmodel.Screen
-import com.mi.explorer.utils.FileOpener
+import com.ct.explorer.data.model.FileItem
+import com.ct.explorer.ui.components.ApkInstallDialog
+import com.ct.explorer.ui.components.ChecksumDialog
+import com.ct.explorer.ui.components.MiFullAudioPlayerSheet
+import com.ct.explorer.ui.components.MiMiniAudioBar
+import com.ct.explorer.ui.screens.*
+import com.ct.explorer.ui.theme.CentExplorerTheme
+import com.ct.explorer.ui.viewmodel.ExplorerViewModel
+import com.ct.explorer.ui.viewmodel.Screen
+import com.ct.explorer.utils.FileOpener
 
 class MainActivity : ComponentActivity() {
 
@@ -48,7 +48,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        com.mi.explorer.utils.InstallerStatusBus.attachActivity(this)
+        com.ct.explorer.utils.InstallerStatusBus.attachActivity(this)
         enableEdgeToEdge()
         handleIncomingIntent(intent)
 
@@ -62,11 +62,11 @@ class MainActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
-        com.mi.explorer.utils.InstallerStatusBus.attachActivity(this)
+        com.ct.explorer.utils.InstallerStatusBus.attachActivity(this)
     }
 
     override fun onDestroy() {
-        com.mi.explorer.utils.InstallerStatusBus.detachActivity(this)
+        com.ct.explorer.utils.InstallerStatusBus.detachActivity(this)
         super.onDestroy()
     }
 
@@ -82,7 +82,7 @@ class MainActivity : ComponentActivity() {
         }
 
         // 0. Check In-App PackageInstaller Session Commit Callback (APK / Split XAPK / APKS)
-        if (intent.action == "com.mi.explorer.ACTION_INSTALL_COMMIT") {
+        if (intent.action == "com.ct.explorer.ACTION_INSTALL_COMMIT") {
             val status = intent.getIntExtra(
                 android.content.pm.PackageInstaller.EXTRA_STATUS,
                 android.content.pm.PackageInstaller.STATUS_FAILURE
@@ -114,7 +114,7 @@ class MainActivity : ComponentActivity() {
                     viewModel.showMessage("Installation cancelled by user")
                 }
                 else -> {
-                    val readable = com.mi.explorer.utils.InstallerStatusBus.formatFailureReason(status, statusMessage)
+                    val readable = com.ct.explorer.utils.InstallerStatusBus.formatFailureReason(status, statusMessage)
                     viewModel.showMessage(readable)
                 }
             }
@@ -122,13 +122,13 @@ class MainActivity : ComponentActivity() {
         }
 
         // 1. Check Home Screen Storage Widget Actions
-        val widgetTarget = intent.getStringExtra(com.mi.explorer.widget.CtStorageWidgetProvider.EXTRA_WIDGET_TARGET)
+        val widgetTarget = intent.getStringExtra(com.ct.explorer.widget.CtStorageWidgetProvider.EXTRA_WIDGET_TARGET)
         if (!widgetTarget.isNullOrBlank()) {
             when (widgetTarget) {
-                com.mi.explorer.widget.CtStorageWidgetProvider.TARGET_CLEANER -> viewModel.openCleaner()
-                com.mi.explorer.widget.CtStorageWidgetProvider.TARGET_FAST_SHARE -> viewModel.openFastShare()
-                com.mi.explorer.widget.CtStorageWidgetProvider.TARGET_STORAGE -> {
-                    viewModel.selectTab(com.mi.explorer.ui.components.CtTab.STORAGE)
+                com.ct.explorer.widget.CtStorageWidgetProvider.TARGET_CLEANER -> viewModel.openCleaner()
+                com.ct.explorer.widget.CtStorageWidgetProvider.TARGET_FAST_SHARE -> viewModel.openFastShare()
+                com.ct.explorer.widget.CtStorageWidgetProvider.TARGET_STORAGE -> {
+                    viewModel.selectTab(com.ct.explorer.ui.components.CtTab.STORAGE)
                     viewModel.navigateToScreen(Screen.MAIN)
                 }
             }
@@ -136,12 +136,12 @@ class MainActivity : ComponentActivity() {
         }
 
         // 2. Check Home Screen Pinned Folder/File Shortcut
-        val shortcutPath = intent.getStringExtra(com.mi.explorer.utils.ShortcutHelper.EXTRA_SHORTCUT_PATH)
+        val shortcutPath = intent.getStringExtra(com.ct.explorer.utils.ShortcutHelper.EXTRA_SHORTCUT_PATH)
         if (!shortcutPath.isNullOrBlank()) {
             val targetFile = java.io.File(shortcutPath)
             if (targetFile.exists()) {
                 if (targetFile.isDirectory) {
-                    viewModel.selectTab(com.mi.explorer.ui.components.CtTab.STORAGE)
+                    viewModel.selectTab(com.ct.explorer.ui.components.CtTab.STORAGE)
                     viewModel.navigateToScreen(Screen.MAIN)
                     viewModel.loadDirectory(targetFile, addToHistory = true)
                 } else {
@@ -370,15 +370,15 @@ fun CtMainApp(viewModel: ExplorerViewModel) {
     }
 
     LaunchedEffect(Unit) {
-        com.mi.explorer.utils.InstallerStatusBus.events.collect { event ->
+        com.ct.explorer.utils.InstallerStatusBus.events.collect { event ->
             when (event) {
-                is com.mi.explorer.utils.InstallSessionEvent.Success -> {
+                is com.ct.explorer.utils.InstallSessionEvent.Success -> {
                     viewModel.loadApps()
                     viewModel.loadStorageApks()
                     viewModel.loadAppBackups()
                     viewModel.showMessage("Package installed successfully!")
                 }
-                is com.mi.explorer.utils.InstallSessionEvent.Failed -> {
+                is com.ct.explorer.utils.InstallSessionEvent.Failed -> {
                     viewModel.showMessage(event.reason)
                 }
                 else -> {}
@@ -488,7 +488,7 @@ fun CtMainApp(viewModel: ExplorerViewModel) {
         val xapkProgress by viewModel.xapkInstallProgress.collectAsStateWithLifecycle()
 
         xapkTarget?.let { xapk ->
-            com.mi.explorer.ui.components.XapkInstallDialog(
+            com.ct.explorer.ui.components.XapkInstallDialog(
                 xapkInfo = xapk,
                 isInstalling = isInstallingXapk,
                 progressText = xapkProgress,

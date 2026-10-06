@@ -1,12 +1,12 @@
-package com.mi.explorer.data.repository
+package com.ct.explorer.data.repository
 
 import android.content.Context
 import android.os.Environment
 import android.os.StatFs
 import android.provider.MediaStore
-import com.mi.explorer.data.model.FileCategory
-import com.mi.explorer.data.model.FileItem
-import com.mi.explorer.data.model.StorageSpace
+import com.ct.explorer.data.model.FileCategory
+import com.ct.explorer.data.model.FileItem
+import com.ct.explorer.data.model.StorageSpace
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File

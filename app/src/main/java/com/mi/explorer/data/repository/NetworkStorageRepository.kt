@@ -1,9 +1,9 @@
-package com.mi.explorer.data.repository
+package com.ct.explorer.data.repository
 
 import android.content.Context
-import com.mi.explorer.data.model.DriveProtocol
-import com.mi.explorer.data.model.NetworkDrive
-import com.mi.explorer.data.model.RemoteFileItem
+import com.ct.explorer.data.model.DriveProtocol
+import com.ct.explorer.data.model.NetworkDrive
+import com.ct.explorer.data.model.RemoteFileItem
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONArray

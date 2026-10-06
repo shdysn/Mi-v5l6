@@ -1,7 +1,7 @@
-package com.mi.explorer.data.repository
+package com.ct.explorer.data.repository
 
 import android.os.Environment
-import com.mi.explorer.data.model.FileItem
+import com.ct.explorer.data.model.FileItem
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File

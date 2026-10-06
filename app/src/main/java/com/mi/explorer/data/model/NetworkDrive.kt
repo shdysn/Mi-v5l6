@@ -1,4 +1,4 @@
-package com.mi.explorer.data.model
+package com.ct.explorer.data.model
 
 enum class DriveProtocol {
     WEBDAV,

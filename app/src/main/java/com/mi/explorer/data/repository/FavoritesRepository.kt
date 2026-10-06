@@ -1,8 +1,8 @@
-package com.mi.explorer.data.repository
+package com.ct.explorer.data.repository
 
 import android.content.Context
 import android.os.Environment
-import com.mi.explorer.data.model.FavoriteItem
+import com.ct.explorer.data.model.FavoriteItem
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONArray

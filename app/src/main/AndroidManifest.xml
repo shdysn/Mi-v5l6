@@ -43,7 +43,7 @@
         android:supportsRtl="true"
         android:theme="@style/Theme.CentExplorer">
         <activity
-            android:name="com.mi.explorer.MainActivity"
+            android:name="com.ct.explorer.MainActivity"
             android:exported="true"
             android:launchMode="singleTop"
             android:supportsPictureInPicture="true"
@@ -206,11 +206,11 @@
         </activity>
 
         <receiver
-            android:name="com.mi.explorer.utils.PackageInstallerStatusReceiver"
+            android:name="com.ct.explorer.utils.PackageInstallerStatusReceiver"
             android:exported="false" />
 
         <receiver
-            android:name="com.mi.explorer.widget.CtStorageWidgetProvider"
+            android:name="com.ct.explorer.widget.CtStorageWidgetProvider"
             android:exported="true"
             android:label="Cent Storage">
             <intent-filter>
