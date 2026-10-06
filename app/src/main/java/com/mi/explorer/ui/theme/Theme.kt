@@ -12,7 +12,7 @@ import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalView
 import androidx.core.view.WindowCompat
 
-private val LightColorScheme = lightColorScheme(
+private val PureWhiteColorScheme = lightColorScheme(
     primary = MiOrange,
     onPrimary = Color.White,
     primaryContainer = MiOrangeSubtle,
@@ -21,73 +21,46 @@ private val LightColorScheme = lightColorScheme(
     onSecondary = Color.White,
     secondaryContainer = MiBlueLight,
     onSecondaryContainer = MiBlue,
-    background = Color(0xFFF7F8FA),
+    background = Color.White,
     onBackground = Gray900,
     surface = Color.White,
     onSurface = Gray900,
-    surfaceVariant = Gray100,
+    surfaceVariant = Color(0xFFF3F4F6),
     onSurfaceVariant = Gray600,
-    outline = Gray300
+    surfaceTint = Color.Transparent,
+    surfaceContainer = Color.White,
+    surfaceContainerLow = Color.White,
+    surfaceContainerLowest = Color.White,
+    surfaceContainerHigh = Color.White,
+    surfaceContainerHighest = Color.White,
+    surfaceBright = Color.White,
+    surfaceDim = Color.White,
+    outline = Gray300,
+    outlineVariant = Gray200
 )
 
-private val DarkColorScheme = darkColorScheme(
-    primary = MiOrange,
-    onPrimary = Color.White,
-    primaryContainer = Color(0xFF2C1B11),
-    onPrimaryContainer = MiOrangeLight,
-    secondary = MiBlue,
-    onSecondary = Color.White,
-    secondaryContainer = Color(0xFF14243A),
-    onSecondaryContainer = MiBlue,
-    background = Color(0xFF121212),
-    onBackground = Color(0xFFF3F4F6),
-    surface = Color(0xFF1E1E1E),
-    onSurface = Color(0xFFF3F4F6),
-    surfaceVariant = Color(0xFF2A2A2A),
-    onSurfaceVariant = Gray400,
-    outline = Color(0xFF383838)
-)
-
-private val AmoledColorScheme = darkColorScheme(
-    primary = MiOrange,
-    onPrimary = Color.White,
-    primaryContainer = Color(0xFF1C130D),
-    onPrimaryContainer = MiOrangeLight,
-    secondary = MiBlue,
-    onSecondary = Color.White,
-    secondaryContainer = Color(0xFF0F1B2B),
-    onSecondaryContainer = MiBlue,
-    background = Color(0xFF000000),
-    onBackground = Color(0xFFFFFFFF),
-    surface = Color(0xFF000000),
-    onSurface = Color(0xFFFFFFFF),
-    surfaceVariant = Color(0xFF121212),
-    onSurfaceVariant = Color(0xFFAAAAAA),
-    outline = Color(0xFF262626)
-)
+val LightColorScheme = PureWhiteColorScheme
+val DarkColorScheme = PureWhiteColorScheme
+val AmoledColorScheme = PureWhiteColorScheme
 
 @Composable
 fun MiExplorerTheme(
-    darkTheme: Boolean = isSystemInDarkTheme(),
+    darkTheme: Boolean = false,
     amoledMode: Boolean = false,
     content: @Composable () -> Unit
 ) {
-    val colorScheme = when {
-        amoledMode -> AmoledColorScheme
-        darkTheme -> DarkColorScheme
-        else -> LightColorScheme
-    }
+    val colorScheme = PureWhiteColorScheme
     val view = LocalView.current
 
     if (!view.isInEditMode) {
         SideEffect {
             val window = (view.context as? Activity)?.window
             if (window != null) {
-                window.statusBarColor = colorScheme.background.toArgb()
-                window.navigationBarColor = colorScheme.background.toArgb()
+                window.statusBarColor = Color.White.toArgb()
+                window.navigationBarColor = Color.White.toArgb()
                 val insetsController = WindowCompat.getInsetsController(window, view)
-                insetsController.isAppearanceLightStatusBars = !darkTheme
-                insetsController.isAppearanceLightNavigationBars = !darkTheme
+                insetsController.isAppearanceLightStatusBars = true
+                insetsController.isAppearanceLightNavigationBars = true
             }
         }
     }

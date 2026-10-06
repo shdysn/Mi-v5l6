@@ -162,7 +162,8 @@ fun StorageCard(
                 if (hasMultipleVolumes) {
                     DropdownMenu(
                         expanded = showVolumeMenu,
-                        onDismissRequest = { showVolumeMenu = false }
+                        onDismissRequest = { showVolumeMenu = false },
+                        containerColor = Color.White
                     ) {
                         storageVolumes.forEach { vol ->
                             DropdownMenuItem(

@@ -52,7 +52,7 @@ fun MiTopHeader(
     Column(
         modifier = modifier
             .fillMaxWidth()
-            .background(MaterialTheme.colorScheme.background)
+            .background(Color.White)
             .padding(horizontal = 16.dp, vertical = 8.dp)
     ) {
         Row(
@@ -127,7 +127,8 @@ fun MiTopHeader(
 
                     DropdownMenu(
                         expanded = showMoreMenu,
-                        onDismissRequest = { showMoreMenu = false }
+                        onDismissRequest = { showMoreMenu = false },
+                        containerColor = Color.White
                     ) {
                         DropdownMenuItem(
                             text = { Text("Tools & Utilities") },
@@ -221,11 +222,10 @@ fun MiTopHeader(
                         )
                         HorizontalDivider()
                         DropdownMenuItem(
-                            text = { Text(if (isAmoled) "AMOLED Black (ON)" else "AMOLED Black (OFF)") },
-                            leadingIcon = { Icon(Icons.Default.DarkMode, contentDescription = null) },
+                            text = { Text("Theme: Clean White") },
+                            leadingIcon = { Icon(Icons.Default.LightMode, contentDescription = null, tint = MiOrange) },
                             onClick = {
                                 showMoreMenu = false
-                                onAmoledToggle()
                             }
                         )
                     }

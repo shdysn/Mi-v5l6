@@ -240,7 +240,8 @@ fun FileActionDropdownMenu(
 ) {
     DropdownMenu(
         expanded = expanded,
-        onDismissRequest = onDismiss
+        onDismissRequest = onDismiss,
+        containerColor = Color.White
     ) {
         DropdownMenuItem(
             text = { Text("Open") },

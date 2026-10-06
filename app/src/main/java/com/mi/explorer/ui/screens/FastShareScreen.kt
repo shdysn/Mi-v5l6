@@ -500,6 +500,7 @@ fun FastShareScreen(
 
         ModalBottomSheet(
             onDismissRequest = { showAppPicker = false },
+            containerColor = Color.White,
             shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp)
         ) {
             Column(

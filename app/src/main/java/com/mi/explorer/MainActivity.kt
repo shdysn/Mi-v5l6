@@ -398,7 +398,7 @@ fun MiMainApp(viewModel: ExplorerViewModel) {
 
     Scaffold(
         modifier = Modifier.fillMaxSize(),
-        containerColor = if (isVideoScreen) androidx.compose.ui.graphics.Color.Black else androidx.compose.material3.MaterialTheme.colorScheme.background,
+        containerColor = if (isVideoScreen) androidx.compose.ui.graphics.Color.Black else androidx.compose.ui.graphics.Color.White,
         contentWindowInsets = if (isVideoScreen) androidx.compose.foundation.layout.WindowInsets(0, 0, 0, 0) else androidx.compose.material3.ScaffoldDefaults.contentWindowInsets,
         snackbarHost = { SnackbarHost(snackbarHostState) },
         bottomBar = {

@@ -30,6 +30,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.ui.graphics.Color
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -199,9 +200,10 @@ fun MiSelectionBottomBar(
                 DropdownMenu(
                     expanded = showMoreMenu,
                     onDismissRequest = { showMoreMenu = false },
+                    containerColor = Color.White,
                     modifier = Modifier
                         .width(220.dp)
-                        .background(MaterialTheme.colorScheme.surface, RoundedCornerShape(16.dp))
+                        .background(Color.White, RoundedCornerShape(16.dp))
                 ) {
                     DropdownMenuItem(
                         text = { Text("Copy to clipboard", fontSize = 15.sp) },

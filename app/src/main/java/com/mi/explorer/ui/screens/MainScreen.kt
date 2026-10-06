@@ -98,6 +98,7 @@ fun MainScreen(
 
     Scaffold(
         modifier = modifier.testTag("main_screen"),
+        containerColor = Color.White,
         topBar = {
             if (storageState.isSelectionMode) {
                 val isRecentTab = selectedTab == MiTab.RECENT
@@ -895,7 +896,7 @@ fun FavoritesBottomSheet(
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
-        containerColor = MaterialTheme.colorScheme.surface
+        containerColor = Color.White
     ) {
         Column(
             modifier = Modifier

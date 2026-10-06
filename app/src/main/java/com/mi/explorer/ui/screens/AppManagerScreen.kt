@@ -989,7 +989,11 @@ private fun InstalledAppClonerRow(
                     IconButton(onClick = { showActionMenu = true }, modifier = Modifier.size(32.dp)) {
                         Icon(Icons.Default.MoreVert, contentDescription = "Menu")
                     }
-                    DropdownMenu(expanded = showActionMenu, onDismissRequest = { showActionMenu = false }) {
+                    DropdownMenu(
+                        expanded = showActionMenu,
+                        onDismissRequest = { showActionMenu = false },
+                        containerColor = Color.White
+                    ) {
                         DropdownMenuItem(
                             text = { Text("Extract APK") },
                             leadingIcon = { Icon(Icons.Default.Backup, contentDescription = null, tint = MiGreen) },
@@ -1223,7 +1227,11 @@ private fun BackupVersionRow(
                 IconButton(onClick = { showMenu = true }, modifier = Modifier.size(30.dp)) {
                     Icon(Icons.Default.MoreVert, contentDescription = "Menu")
                 }
-                DropdownMenu(expanded = showMenu, onDismissRequest = { showMenu = false }) {
+                DropdownMenu(
+                    expanded = showMenu,
+                    onDismissRequest = { showMenu = false },
+                    containerColor = Color.White
+                ) {
                     DropdownMenuItem(
                         text = { Text("Share APK (Offline)") },
                         leadingIcon = { Icon(Icons.Default.Share, contentDescription = null) },
@@ -1359,7 +1367,11 @@ private fun StorageApkRow(
                 IconButton(onClick = { showMenu = true }, modifier = Modifier.size(34.dp)) {
                     Icon(Icons.Default.MoreVert, contentDescription = "Menu")
                 }
-                DropdownMenu(expanded = showMenu, onDismissRequest = { showMenu = false }) {
+                DropdownMenu(
+                    expanded = showMenu,
+                    onDismissRequest = { showMenu = false },
+                    containerColor = Color.White
+                ) {
                     DropdownMenuItem(
                         text = { Text("Install / Open") },
                         leadingIcon = { Icon(Icons.Default.Android, contentDescription = null, tint = MiGreen) },
@@ -1439,6 +1451,7 @@ private fun AppDetailSheet(
 ) {
     ModalBottomSheet(
         onDismissRequest = onDismiss,
+        containerColor = Color.White,
         sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     ) {
         Column(
