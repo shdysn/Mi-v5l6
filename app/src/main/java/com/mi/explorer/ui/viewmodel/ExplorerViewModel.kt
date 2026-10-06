@@ -1577,6 +1577,136 @@ class ExplorerViewModel(application: Application) : AndroidViewModel(application
         }
     }
 
+    var cachedArchivePassword: String? = null
+
+    fun openZipEntry(
+        archiveFile: File,
+        entry: ZipEntryItem,
+        password: String? = null,
+        onRequiresPassword: (() -> Unit)? = null
+    ) {
+        if (entry.isDirectory) return
+
+        val pass = password ?: cachedArchivePassword
+        val previewDir = File(getApplication<android.app.Application>().cacheDir, "zip_previews/${archiveFile.nameWithoutExtension}")
+        val cleanName = entry.fullPath.removeSuffix(".miaes")
+        val cachedFile = File(previewDir, cleanName)
+
+        // Fast path: if already extracted in cache, open immediately without waiting
+        if (cachedFile.exists() && cachedFile.length() > 0L && (entry.size == 0L || cachedFile.length() == entry.size)) {
+            val item = FileItem(cachedFile)
+            if (!openFileSmart(item)) {
+                com.mi.explorer.utils.FileOpener.openWithChooser(getApplication(), item)
+            }
+            return
+        }
+
+        viewModelScope.launch {
+            showMessage("Opening ${entry.name}...")
+            val res = ArchiveHelper.extractSingleEntry(
+                archiveFile = archiveFile,
+                entryPath = entry.fullPath,
+                destDir = previewDir,
+                password = pass
+            )
+
+            res.fold(
+                onSuccess = { extractedFile ->
+                    if (pass != null) cachedArchivePassword = pass
+                    val item = FileItem(extractedFile)
+                    if (!openFileSmart(item)) {
+                        com.mi.explorer.utils.FileOpener.openWithChooser(getApplication(), item)
+                    }
+                },
+                onFailure = { err ->
+                    val msg = err.localizedMessage ?: ""
+                    if (msg.contains("Password", ignoreCase = true) || msg.contains("decrypt", ignoreCase = true)) {
+                        if (onRequiresPassword != null) {
+                            onRequiresPassword()
+                        } else {
+                            showMessage("Password required for encrypted archive file")
+                        }
+                    } else {
+                        showMessage("Cannot open file: $msg")
+                    }
+                }
+            )
+        }
+    }
+
+    fun extractSingleZipEntry(
+        archiveFile: File,
+        entry: ZipEntryItem,
+        targetDir: File,
+        password: String? = null
+    ) {
+        val pass = password ?: cachedArchivePassword
+        viewModelScope.launch {
+            isZipExtracting.value = true
+            val res = ArchiveHelper.extractSingleEntry(
+                archiveFile = archiveFile,
+                entryPath = entry.fullPath,
+                destDir = targetDir,
+                password = pass
+            )
+            isZipExtracting.value = false
+            res.fold(
+                onSuccess = { file ->
+                    showMessage("Extracted ${file.name} to ${targetDir.name}")
+                    loadDirectory(_storageState.value.currentDir)
+                    refreshStorage()
+                },
+                onFailure = { err ->
+                    showMessage("Failed to extract ${entry.name}: ${err.localizedMessage}")
+                }
+            )
+        }
+    }
+
+    fun openZipEntryWithChooser(
+        archiveFile: File,
+        entry: ZipEntryItem,
+        context: android.content.Context,
+        password: String? = null,
+        onRequiresPassword: (() -> Unit)? = null
+    ) {
+        if (entry.isDirectory) return
+        val pass = password ?: cachedArchivePassword
+        val previewDir = File(getApplication<android.app.Application>().cacheDir, "zip_previews/${archiveFile.nameWithoutExtension}")
+        val cleanName = entry.fullPath.removeSuffix(".miaes")
+        val cachedFile = File(previewDir, cleanName)
+
+        if (cachedFile.exists() && cachedFile.length() > 0L && (entry.size == 0L || cachedFile.length() == entry.size)) {
+            com.mi.explorer.utils.FileOpener.openWithChooser(context, FileItem(cachedFile))
+            return
+        }
+
+        viewModelScope.launch {
+            showMessage("Extracting ${entry.name} for app chooser...")
+            val res = ArchiveHelper.extractSingleEntry(
+                archiveFile = archiveFile,
+                entryPath = entry.fullPath,
+                destDir = previewDir,
+                password = pass
+            )
+            res.fold(
+                onSuccess = { extractedFile ->
+                    if (pass != null) cachedArchivePassword = pass
+                    com.mi.explorer.utils.FileOpener.openWithChooser(context, FileItem(extractedFile))
+                },
+                onFailure = { err ->
+                    val msg = err.localizedMessage ?: ""
+                    if (msg.contains("Password", ignoreCase = true) || msg.contains("decrypt", ignoreCase = true)) {
+                        if (onRequiresPassword != null) onRequiresPassword()
+                        else showMessage("Password required for encrypted archive")
+                    } else {
+                        showMessage("Cannot open file: $msg")
+                    }
+                }
+            )
+        }
+    }
+
     fun extractZipArchive(
         zipFile: File,
         targetDir: File,

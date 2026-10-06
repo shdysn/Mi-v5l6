@@ -1,8 +1,10 @@
 package com.mi.explorer.ui.screens
 
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -17,6 +19,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
@@ -34,6 +39,8 @@ import java.io.File
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ZipViewerScreen(viewModel: ExplorerViewModel) {
+    val context = LocalContext.current
+    val clipboardManager = LocalClipboardManager.current
     val scope = rememberCoroutineScope()
     val zipState by viewModel.zipViewerState.collectAsStateWithLifecycle()
     val isExtracting by viewModel.isZipExtracting.collectAsStateWithLifecycle()
@@ -43,6 +50,12 @@ fun ZipViewerScreen(viewModel: ExplorerViewModel) {
     var showExtractDestinationDialog by remember { mutableStateOf(false) }
     var isTestingIntegrity by remember { mutableStateOf(false) }
     var integrityResult by remember { mutableStateOf<ArchiveIntegrityResult?>(null) }
+
+    var singleExtractTarget by remember { mutableStateOf<ZipEntryItem?>(null) }
+    var singleExtractDestination by remember { mutableStateOf("") }
+    var passwordPromptTarget by remember { mutableStateOf<ZipEntryItem?>(null) }
+    var passwordPromptInput by remember { mutableStateOf("") }
+    var archivePassword by remember { mutableStateOf(viewModel.cachedArchivePassword ?: "") }
 
     val archive = zipState.archiveInfo
     val archiveType = remember(archive?.sourceFile) {
@@ -305,9 +318,61 @@ fun ZipViewerScreen(viewModel: ExplorerViewModel) {
                             ZipEntryRow(
                                 entry = entry,
                                 isSelected = isSelected,
+                                onItemClick = {
+                                    if (entry.isDirectory) {
+                                        if (isSelected) selectedEntries.remove(entry.fullPath)
+                                        else selectedEntries.add(entry.fullPath)
+                                    } else if (archive.sourceFile != null) {
+                                        viewModel.openZipEntry(
+                                            archiveFile = archive.sourceFile,
+                                            entry = entry,
+                                            password = archivePassword.takeIf { it.isNotBlank() },
+                                            onRequiresPassword = {
+                                                passwordPromptTarget = entry
+                                            }
+                                        )
+                                    }
+                                },
                                 onToggleSelect = {
                                     if (isSelected) selectedEntries.remove(entry.fullPath)
                                     else selectedEntries.add(entry.fullPath)
+                                },
+                                onOpen = {
+                                    if (archive.sourceFile != null) {
+                                        viewModel.openZipEntry(
+                                            archiveFile = archive.sourceFile,
+                                            entry = entry,
+                                            password = archivePassword.takeIf { it.isNotBlank() },
+                                            onRequiresPassword = {
+                                                passwordPromptTarget = entry
+                                            }
+                                        )
+                                    }
+                                },
+                                onOpenWith = {
+                                    if (archive.sourceFile != null) {
+                                        viewModel.openZipEntryWithChooser(
+                                            archiveFile = archive.sourceFile,
+                                            entry = entry,
+                                            context = context,
+                                            password = archivePassword.takeIf { it.isNotBlank() },
+                                            onRequiresPassword = {
+                                                passwordPromptTarget = entry
+                                            }
+                                        )
+                                    }
+                                },
+                                onExtractSingle = {
+                                    val src = archive?.sourceFile
+                                    val parent = src?.parentFile
+                                    val defaultDest = if (parent != null && parent.canWrite()) parent.absolutePath
+                                    else android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_DOWNLOADS).absolutePath
+                                    singleExtractDestination = defaultDest
+                                    singleExtractTarget = entry
+                                },
+                                onCopyPath = {
+                                    clipboardManager.setText(AnnotatedString(entry.fullPath))
+                                    viewModel.showMessage("Copied path: ${entry.fullPath}")
                                 }
                             )
                         }
@@ -429,26 +494,156 @@ fun ZipViewerScreen(viewModel: ExplorerViewModel) {
             }
         )
     }
+
+    // Single file extraction dialog
+    singleExtractTarget?.let { entry ->
+        if (archive?.sourceFile != null) {
+            AlertDialog(
+                onDismissRequest = { singleExtractTarget = null },
+                title = {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Default.Unarchive, contentDescription = null, tint = MiOrange)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Extract File")
+                    }
+                },
+                text = {
+                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Text(
+                            text = "Extract \"${entry.name}\" to destination folder:",
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                        OutlinedTextField(
+                            value = singleExtractDestination,
+                            onValueChange = { singleExtractDestination = it },
+                            label = { Text("Destination Directory") },
+                            singleLine = false,
+                            maxLines = 3,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        if (isEncrypted && archivePassword.isBlank()) {
+                            OutlinedTextField(
+                                value = archivePassword,
+                                onValueChange = { archivePassword = it },
+                                label = { Text("Password (Encrypted Archive)") },
+                                singleLine = true,
+                                visualTransformation = PasswordVisualTransformation(),
+                                leadingIcon = { Icon(Icons.Default.Lock, contentDescription = null, tint = MiOrange) },
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                        }
+                    }
+                },
+                confirmButton = {
+                    Button(
+                        onClick = {
+                            val targetDir = File(singleExtractDestination)
+                            viewModel.extractSingleZipEntry(
+                                archiveFile = archive.sourceFile,
+                                entry = entry,
+                                targetDir = targetDir,
+                                password = archivePassword.takeIf { it.isNotBlank() }
+                            )
+                            singleExtractTarget = null
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = MiOrange)
+                    ) {
+                        Text("Extract File")
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { singleExtractTarget = null }) {
+                        Text("Cancel")
+                    }
+                }
+            )
+        }
+    }
+
+    // Password Prompt Dialog when opening an encrypted file
+    passwordPromptTarget?.let { entry ->
+        if (archive?.sourceFile != null) {
+            AlertDialog(
+                onDismissRequest = { passwordPromptTarget = null },
+                icon = { Icon(Icons.Default.Lock, contentDescription = null, tint = MiOrange, modifier = Modifier.size(36.dp)) },
+                title = { Text("Password Required") },
+                text = {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text(
+                            text = "\"${entry.name}\" is protected by AES-256 encryption. Enter the password to open it:",
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                        OutlinedTextField(
+                            value = passwordPromptInput,
+                            onValueChange = { passwordPromptInput = it },
+                            label = { Text("Archive Password") },
+                            singleLine = true,
+                            visualTransformation = PasswordVisualTransformation(),
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    }
+                },
+                confirmButton = {
+                    Button(
+                        onClick = {
+                            val pass = passwordPromptInput.trim()
+                            if (pass.isNotEmpty()) {
+                                archivePassword = pass
+                                viewModel.cachedArchivePassword = pass
+                                passwordPromptTarget = null
+                                viewModel.openZipEntry(
+                                    archiveFile = archive.sourceFile,
+                                    entry = entry,
+                                    password = pass
+                                )
+                            }
+                        },
+                        enabled = passwordPromptInput.isNotBlank(),
+                        colors = ButtonDefaults.buttonColors(containerColor = MiOrange)
+                    ) {
+                        Text("Unlock & Open")
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { passwordPromptTarget = null }) {
+                        Text("Cancel")
+                    }
+                }
+            )
+        }
+    }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun ZipEntryRow(
     entry: ZipEntryItem,
     isSelected: Boolean,
-    onToggleSelect: () -> Unit
+    onItemClick: () -> Unit,
+    onToggleSelect: () -> Unit,
+    onOpen: () -> Unit,
+    onOpenWith: () -> Unit,
+    onExtractSingle: () -> Unit,
+    onCopyPath: () -> Unit
 ) {
+    var showMenu by remember { mutableStateOf(false) }
+
     Surface(
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(12.dp))
-            .clickable(onClick = onToggleSelect),
+            .combinedClickable(
+                onClick = onItemClick,
+                onLongClick = onToggleSelect
+            ),
         color = if (isSelected) MiOrange.copy(alpha = 0.08f) else MaterialTheme.colorScheme.surface,
+        border = if (isSelected) BorderStroke(1.dp, MiOrange.copy(alpha = 0.4f)) else null,
         tonalElevation = 1.dp
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 12.dp, vertical = 10.dp),
+                .padding(horizontal = 8.dp, vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Checkbox(
@@ -471,7 +666,7 @@ fun ZipEntryRow(
                 shape = RoundedCornerShape(10.dp)
             )
 
-            Spacer(modifier = Modifier.width(12.dp))
+            Spacer(modifier = Modifier.width(10.dp))
 
             Column(modifier = Modifier.weight(1f)) {
                 Text(
@@ -481,11 +676,120 @@ fun ZipEntryRow(
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
-                Text(
-                    text = if (entry.isDirectory) "Folder" else "${entry.formattedSize}  (${entry.ratioPercentage}% saved)",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    if (entry.extension.isNotEmpty() && !entry.isDirectory) {
+                        Surface(
+                            shape = RoundedCornerShape(4.dp),
+                            color = MaterialTheme.colorScheme.surfaceVariant
+                        ) {
+                            Text(
+                                text = entry.extension.uppercase(),
+                                fontSize = 9.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                            )
+                        }
+                    }
+                    Text(
+                        text = if (entry.isDirectory) "Folder" else "${entry.formattedSize}  (${entry.ratioPercentage}% saved)",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+
+            if (!entry.isDirectory) {
+                // Quick Open / View Icon Button
+                IconButton(
+                    onClick = onOpen,
+                    modifier = Modifier.size(34.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Visibility,
+                        contentDescription = "View file",
+                        tint = MiOrange,
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
+
+                // 3-Dots Action Menu
+                Box {
+                    IconButton(
+                        onClick = { showMenu = true },
+                        modifier = Modifier.size(34.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.MoreVert,
+                            contentDescription = "More Options",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
+
+                    DropdownMenu(
+                        expanded = showMenu,
+                        onDismissRequest = { showMenu = false }
+                    ) {
+                        DropdownMenuItem(
+                            leadingIcon = {
+                                Icon(Icons.Default.Visibility, contentDescription = null, tint = MiOrange, modifier = Modifier.size(18.dp))
+                            },
+                            text = { Text("Open / Preview") },
+                            onClick = {
+                                showMenu = false
+                                onOpen()
+                            }
+                        )
+                        DropdownMenuItem(
+                            leadingIcon = {
+                                Icon(Icons.Default.OpenInNew, contentDescription = null, modifier = Modifier.size(18.dp))
+                            },
+                            text = { Text("Open with...") },
+                            onClick = {
+                                showMenu = false
+                                onOpenWith()
+                            }
+                        )
+                        DropdownMenuItem(
+                            leadingIcon = {
+                                Icon(Icons.Default.Unarchive, contentDescription = null, tint = Color(0xFF10B981), modifier = Modifier.size(18.dp))
+                            },
+                            text = { Text("Extract this file") },
+                            onClick = {
+                                showMenu = false
+                                onExtractSingle()
+                            }
+                        )
+                        DropdownMenuItem(
+                            leadingIcon = {
+                                Icon(Icons.Default.ContentCopy, contentDescription = null, modifier = Modifier.size(18.dp))
+                            },
+                            text = { Text("Copy entry path") },
+                            onClick = {
+                                showMenu = false
+                                onCopyPath()
+                            }
+                        )
+                        DropdownMenuItem(
+                            leadingIcon = {
+                                Icon(
+                                    if (isSelected) Icons.Default.CheckBox else Icons.Default.CheckBoxOutlineBlank,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                            },
+                            text = { Text(if (isSelected) "Deselect" else "Select") },
+                            onClick = {
+                                showMenu = false
+                                onToggleSelect()
+                            }
+                        )
+                    }
+                }
             }
         }
     }

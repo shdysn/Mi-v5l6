@@ -516,6 +516,43 @@ object ArchiveHelper {
         }
     }
 
+    suspend fun extractSingleEntry(
+        archiveFile: File,
+        entryPath: String,
+        destDir: File,
+        password: String? = null
+    ): Result<File> = withContext(Dispatchers.IO) {
+        try {
+            if (!destDir.exists()) destDir.mkdirs()
+            val cleanName = entryPath.removeSuffix(ENCRYPTED_ENTRY_SUFFIX)
+            val directOut = File(destDir, cleanName)
+
+            val res = extractArchive(
+                file = archiveFile,
+                destDir = destDir,
+                password = password,
+                selectedPaths = setOf(entryPath, cleanName)
+            ) { _, _ -> }
+
+            if (res.isSuccess) {
+                if (directOut.exists()) {
+                    Result.success(directOut)
+                } else {
+                    val found = destDir.walkTopDown().firstOrNull { it.isFile && (it.name == File(cleanName).name || it.absolutePath.endsWith(cleanName)) }
+                    if (found != null) {
+                        Result.success(found)
+                    } else {
+                        Result.failure(FileNotFoundException("Extracted entry could not be located: $entryPath"))
+                    }
+                }
+            } else {
+                Result.failure(res.exceptionOrNull() ?: Exception("Extraction failed"))
+            }
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
     private fun extractZip(
         file: File,
         destDir: File,
