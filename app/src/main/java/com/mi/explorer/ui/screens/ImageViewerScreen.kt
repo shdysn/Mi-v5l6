@@ -7,6 +7,8 @@ import android.graphics.ColorMatrix as AndroidColorMatrix
 import android.graphics.ColorMatrixColorFilter as AndroidColorMatrixFilter
 import android.graphics.Matrix
 import android.graphics.Paint
+import android.media.ExifInterface
+import android.util.LruCache
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
@@ -80,6 +82,71 @@ enum class ImageCropRatio(val label: String, val ratio: Float?) {
     STORY_9_16("9:16 Story", 9f / 16f)
 }
 
+internal object FullscreenImageCache {
+    private val maxMemoryKb = (Runtime.getRuntime().maxMemory() / 1024).toInt()
+    private val cacheSizeKb = (maxMemoryKb / 4).coerceAtLeast(32 * 1024)
+
+    private val cache = object : LruCache<String, Bitmap>(cacheSizeKb) {
+        override fun sizeOf(key: String, bitmap: Bitmap): Int {
+            return bitmap.byteCount / 1024
+        }
+    }
+
+    fun get(path: String): Bitmap? = cache.get(path)
+    fun put(path: String, bitmap: Bitmap) { cache.put(path, bitmap) }
+    fun remove(path: String) { cache.remove(path) }
+    fun clear() { cache.evictAll() }
+}
+
+internal suspend fun loadFullscreenBitmap(file: File): Bitmap? = withContext(Dispatchers.IO) {
+    if (!file.exists() || !file.canRead() || file.isDirectory) return@withContext null
+    val path = file.absolutePath
+    FullscreenImageCache.get(path)?.let { return@withContext it }
+
+    try {
+        val boundsOpts = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        BitmapFactory.decodeFile(path, boundsOpts)
+        if (boundsOpts.outWidth <= 0 || boundsOpts.outHeight <= 0) return@withContext null
+
+        val maxDim = maxOf(boundsOpts.outWidth, boundsOpts.outHeight)
+        val sample = if (maxDim > 2560) (maxDim / 2560).coerceAtLeast(1) else 1
+        val decodeOpts = BitmapFactory.Options().apply {
+            inSampleSize = sample
+            inPreferredConfig = Bitmap.Config.ARGB_8888
+        }
+        val decoded = BitmapFactory.decodeFile(path, decodeOpts) ?: return@withContext null
+
+        val finalBitmap = try {
+            val exif = ExifInterface(path)
+            val orientation = exif.getAttributeInt(
+                ExifInterface.TAG_ORIENTATION,
+                ExifInterface.ORIENTATION_NORMAL
+            )
+            val rotation = when (orientation) {
+                ExifInterface.ORIENTATION_ROTATE_90 -> 90f
+                ExifInterface.ORIENTATION_ROTATE_180 -> 180f
+                ExifInterface.ORIENTATION_ROTATE_270 -> 270f
+                else -> 0f
+            }
+            if (rotation != 0f) {
+                val matrix = Matrix().apply { postRotate(rotation) }
+                val rotated = Bitmap.createBitmap(decoded, 0, 0, decoded.width, decoded.height, matrix, true)
+                if (rotated != decoded) decoded.recycle()
+                rotated
+            } else {
+                decoded
+            }
+        } catch (_: Exception) {
+            decoded
+        }
+
+        FullscreenImageCache.put(path, finalBitmap)
+        finalBitmap
+    } catch (_: Throwable) {
+        null
+    }
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ImageViewerScreen(
@@ -110,8 +177,9 @@ fun ImageViewerScreen(
     var zoomScale by remember { mutableFloatStateOf(1f) }
     var panOffset by remember { mutableStateOf(Offset.Zero) }
     val transformState = rememberTransformableState { zoomChange, offsetChange, _ ->
-        zoomScale = (zoomScale * zoomChange).coerceIn(1f, 4f)
-        if (zoomScale > 1f) {
+        val newZoom = (zoomScale * zoomChange).coerceIn(1f, 4f)
+        zoomScale = newZoom
+        if (newZoom > 1.05f) {
             panOffset += offsetChange
         } else {
             panOffset = Offset.Zero
@@ -129,6 +197,7 @@ fun ImageViewerScreen(
         initialPage = initialPage,
         pageCount = { pageCount }
     )
+    val thumbListState = rememberLazyListState()
 
     // Sync external index changes with pager (when opening new image or changing from outside)
     LaunchedEffect(state.currentFile?.absolutePath, state.currentIndex) {
@@ -146,8 +215,10 @@ fun ImageViewerScreen(
         }
     }
 
-    // Reset edits when switching image
-    LaunchedEffect(state.currentFile?.absolutePath) {
+    // Reset edits and zoom, and scroll thumbnail strip when settled page changes
+    LaunchedEffect(pagerState.settledPage) {
+        zoomScale = 1f
+        panOffset = Offset.Zero
         rotationDegrees = 0f
         flipHorizontal = false
         flipVertical = false
@@ -156,32 +227,20 @@ fun ImageViewerScreen(
         brightnessAdj = 0f
         contrastAdj = 1f
         saturationAdj = 1f
-        zoomScale = 1f
-        panOffset = Offset.Zero
+        if (images.isNotEmpty() && pagerState.settledPage in images.indices) {
+            thumbListState.animateScrollToItem((pagerState.settledPage - 2).coerceAtLeast(0))
+        }
     }
 
-    var bitmap by remember(state.currentFile?.absolutePath, reloadTrigger) {
-        mutableStateOf<Bitmap?>(null)
+    var activeBitmap by remember(state.currentFile?.absolutePath, reloadTrigger) {
+        mutableStateOf<Bitmap?>(state.currentFile?.let { FullscreenImageCache.get(it.absolutePath) })
     }
 
     LaunchedEffect(state.currentFile?.absolutePath, reloadTrigger) {
         val file = state.currentFile ?: return@LaunchedEffect
-        withContext(Dispatchers.IO) {
-            try {
-                val boundsOpts = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-                BitmapFactory.decodeFile(file.absolutePath, boundsOpts)
-                val maxDim = maxOf(boundsOpts.outWidth, boundsOpts.outHeight)
-                val sample = if (maxDim > 3072) maxDim / 3072 else 1
-                val decodeOpts = BitmapFactory.Options().apply { inSampleSize = sample.coerceAtLeast(1) }
-                val decoded = BitmapFactory.decodeFile(file.absolutePath, decodeOpts)
-                withContext(Dispatchers.Main) {
-                    bitmap = decoded
-                }
-            } catch (_: Exception) {
-                withContext(Dispatchers.Main) {
-                    bitmap = null
-                }
-            }
+        val loaded = loadFullscreenBitmap(file)
+        if (loaded != null) {
+            activeBitmap = loaded
         }
     }
 
@@ -212,7 +271,7 @@ fun ImageViewerScreen(
                             overflow = TextOverflow.Ellipsis
                         )
                         if (state.imageList.isNotEmpty()) {
-                            val currentBmp = bitmap
+                            val currentBmp = activeBitmap
                             Text(
                                 text = "${state.currentIndex + 1} of ${state.imageList.size}" +
                                     (if (currentBmp != null) " • ${currentBmp.width}×${currentBmp.height}" else ""),
@@ -325,7 +384,7 @@ fun ImageViewerScreen(
                                     }
                                     Button(
                                         onClick = {
-                                            val srcBmp = bitmap ?: return@Button
+                                            val srcBmp = activeBitmap ?: return@Button
                                             val curFile = state.currentFile ?: return@Button
                                             scope.launch {
                                                 val savedFile = renderAndSaveEditedBitmap(
@@ -483,11 +542,6 @@ fun ImageViewerScreen(
                             .fillMaxWidth()
                             .background(Color.White)
                     ) {
-                        val thumbListState = rememberLazyListState()
-                        LaunchedEffect(pagerState.currentPage) {
-                            thumbListState.animateScrollToItem((pagerState.currentPage - 2).coerceAtLeast(0))
-                        }
-
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -576,87 +630,42 @@ fun ImageViewerScreen(
             HorizontalPager(
                 state = pagerState,
                 userScrollEnabled = zoomScale <= 1.05f,
+                beyondViewportPageCount = 1,
                 key = { page -> images.getOrNull(page)?.path ?: page.toString() },
                 modifier = Modifier.fillMaxSize()
             ) { page ->
                 val pageItem = images.getOrNull(page)
-                val pageFile = pageItem?.file ?: state.currentFile
+                val pageFile = pageItem?.file ?: (if (page == state.currentIndex) state.currentFile else null)
                 val isCurrent = page == pagerState.currentPage
 
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .then(
-                            if (isCurrent && zoomScale > 1.05f) {
-                                Modifier.transformable(state = transformState)
-                            } else {
-                                Modifier
+                if (pageFile != null) {
+                    ImageViewerPageItem(
+                        file = pageFile,
+                        isCurrentPage = isCurrent,
+                        zoomScale = if (isCurrent) zoomScale else 1f,
+                        panOffset = if (isCurrent) panOffset else Offset.Zero,
+                        transformState = transformState,
+                        rotationDegrees = if (isCurrent) rotationDegrees else 0f,
+                        flipHorizontal = if (isCurrent) flipHorizontal else false,
+                        flipVertical = if (isCurrent) flipVertical else false,
+                        cropRatio = if (isCurrent) selectedCropRatio.ratio else null,
+                        composeColorMatrix = composeColorMatrix,
+                        onDoubleTap = {
+                            if (isCurrent) {
+                                if (zoomScale > 1.1f) {
+                                    zoomScale = 1f
+                                    panOffset = Offset.Zero
+                                } else {
+                                    zoomScale = 2.25f
+                                }
                             }
-                        ),
-                    contentAlignment = Alignment.Center
-                ) {
-                    if (isCurrent && bitmap != null) {
-                        val cropModifier = selectedCropRatio.ratio?.let { ratio ->
-                            Modifier.aspectRatio(ratio, matchHeightConstraintsFirst = ratio < 1f)
-                        } ?: Modifier.fillMaxSize()
-
-                        Image(
-                            bitmap = bitmap!!.asImageBitmap(),
-                            contentDescription = pageFile?.name,
-                            colorFilter = ColorFilter.colorMatrix(composeColorMatrix),
-                            modifier = cropModifier
-                                .graphicsLayer(
-                                    scaleX = zoomScale * (if (flipHorizontal) -1f else 1f),
-                                    scaleY = zoomScale * (if (flipVertical) -1f else 1f),
-                                    rotationZ = rotationDegrees,
-                                    translationX = panOffset.x,
-                                    translationY = panOffset.y
-                                )
-                                .pointerInput(isCurrent) {
-                                    detectTapGestures(
-                                        onDoubleTap = {
-                                            if (zoomScale > 1.1f) {
-                                                zoomScale = 1f
-                                                panOffset = Offset.Zero
-                                            } else {
-                                                zoomScale = 2.25f
-                                            }
-                                        }
-                                    )
-                                },
-                            contentScale = if (selectedCropRatio.ratio != null) ContentScale.Crop else ContentScale.Fit
-                        )
-                    } else if (pageFile != null) {
-                        var pageBmp by remember(pageFile.absolutePath) { mutableStateOf<Bitmap?>(null) }
-                        LaunchedEffect(pageFile.absolutePath) {
-                            withContext(Dispatchers.IO) {
-                                try {
-                                    val boundsOpts = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-                                    BitmapFactory.decodeFile(pageFile.absolutePath, boundsOpts)
-                                    val maxDim = maxOf(boundsOpts.outWidth, boundsOpts.outHeight)
-                                    val sample = if (maxDim > 1920) maxDim / 1920 else 1
-                                    val decodeOpts = BitmapFactory.Options().apply { inSampleSize = sample.coerceAtLeast(1) }
-                                    val decoded = BitmapFactory.decodeFile(pageFile.absolutePath, decodeOpts)
-                                    withContext(Dispatchers.Main) {
-                                        pageBmp = decoded
-                                    }
-                                } catch (_: Exception) {}
+                        },
+                        onBitmapReady = { loadedBmp ->
+                            if (page == pagerState.currentPage) {
+                                activeBitmap = loadedBmp
                             }
                         }
-
-                        if (pageBmp != null) {
-                            Image(
-                                bitmap = pageBmp!!.asImageBitmap(),
-                                contentDescription = pageFile.name,
-                                modifier = Modifier.fillMaxSize(),
-                                contentScale = ContentScale.Fit
-                            )
-                        } else {
-                            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                                CircularProgressIndicator(color = MiOrange, modifier = Modifier.size(32.dp))
-                            }
-                        }
-                    }
+                    )
                 }
             }
 
@@ -754,7 +763,7 @@ fun ImageViewerScreen(
     }
 
     // Smart Image Compressor & Resizer Dialog
-    val compressBmp = bitmap
+    val compressBmp = activeBitmap
     if (showCompressDialog && state.currentFile != null && compressBmp != null) {
         val currentFile = state.currentFile!!
         val originalBytes = currentFile.length()
@@ -868,7 +877,7 @@ fun ImageViewerScreen(
 
     if (showInfoDialog && state.currentFile != null) {
         val f = state.currentFile!!
-        val infoBmp = bitmap
+        val infoBmp = activeBitmap
         AlertDialog(
             onDismissRequest = { showInfoDialog = false },
             title = { Text("Photo Details") },
@@ -895,10 +904,109 @@ fun ImageViewerScreen(
             item = FileItem(state.currentFile!!),
             onDismiss = { showExifCleaner = false },
             onCleanSaved = {
+                state.currentFile?.let { FullscreenImageCache.remove(it.absolutePath) }
                 reloadTrigger++
                 viewModel.showMessage("Photo metadata stripped successfully!")
             }
         )
+    }
+}
+
+@Composable
+private fun ImageViewerPageItem(
+    file: File,
+    isCurrentPage: Boolean,
+    zoomScale: Float,
+    panOffset: Offset,
+    transformState: androidx.compose.foundation.gestures.TransformableState,
+    rotationDegrees: Float,
+    flipHorizontal: Boolean,
+    flipVertical: Boolean,
+    cropRatio: Float?,
+    composeColorMatrix: ColorMatrix,
+    onDoubleTap: () -> Unit,
+    onBitmapReady: (Bitmap) -> Unit
+) {
+    var pageBitmap by remember(file.absolutePath) {
+        mutableStateOf<Bitmap?>(FullscreenImageCache.get(file.absolutePath))
+    }
+
+    LaunchedEffect(file.absolutePath) {
+        val cached = FullscreenImageCache.get(file.absolutePath)
+        if (cached != null) {
+            pageBitmap = cached
+            if (isCurrentPage) onBitmapReady(cached)
+        } else {
+            val decoded = loadFullscreenBitmap(file)
+            pageBitmap = decoded
+            if (decoded != null && isCurrentPage) {
+                onBitmapReady(decoded)
+            }
+        }
+    }
+
+    LaunchedEffect(isCurrentPage, pageBitmap) {
+        val bmp = pageBitmap
+        if (isCurrentPage && bmp != null) {
+            onBitmapReady(bmp)
+        }
+    }
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .then(
+                if (isCurrentPage) {
+                    Modifier.transformable(
+                        state = transformState,
+                        enabled = true
+                    )
+                } else {
+                    Modifier
+                }
+            ),
+        contentAlignment = Alignment.Center
+    ) {
+        val currentBmp = pageBitmap
+        if (currentBmp != null) {
+            val cropModifier = if (isCurrentPage && cropRatio != null) {
+                Modifier.aspectRatio(cropRatio, matchHeightConstraintsFirst = cropRatio < 1f)
+            } else {
+                Modifier.fillMaxSize()
+            }
+
+            Image(
+                bitmap = currentBmp.asImageBitmap(),
+                contentDescription = file.name,
+                colorFilter = if (isCurrentPage) ColorFilter.colorMatrix(composeColorMatrix) else null,
+                modifier = cropModifier
+                    .graphicsLayer(
+                        scaleX = if (isCurrentPage) zoomScale * (if (flipHorizontal) -1f else 1f) else 1f,
+                        scaleY = if (isCurrentPage) zoomScale * (if (flipVertical) -1f else 1f) else 1f,
+                        rotationZ = if (isCurrentPage) rotationDegrees else 0f,
+                        translationX = if (isCurrentPage) panOffset.x else 0f,
+                        translationY = if (isCurrentPage) panOffset.y else 0f
+                    )
+                    .pointerInput(isCurrentPage) {
+                        if (isCurrentPage) {
+                            detectTapGestures(
+                                onDoubleTap = { onDoubleTap() }
+                            )
+                        }
+                    },
+                contentScale = if (isCurrentPage && cropRatio != null) ContentScale.Crop else ContentScale.Fit
+            )
+        } else {
+            Box(
+                modifier = Modifier.fillMaxSize(),
+                contentAlignment = Alignment.Center
+            ) {
+                CircularProgressIndicator(
+                    color = MiOrange,
+                    modifier = Modifier.size(36.dp)
+                )
+            }
+        }
     }
 }
 
