@@ -32,7 +32,7 @@ class DuplicateRepository(private val context: Context) {
             Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOCUMENTS),
             Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MUSIC),
             Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MOVIES),
-            File(context.filesDir, "MiExplorer")
+            File(context.filesDir, "CentExplorer")
         ).filter { it.exists() && it.canRead() }
 
         val allFiles = mutableListOf<File>()

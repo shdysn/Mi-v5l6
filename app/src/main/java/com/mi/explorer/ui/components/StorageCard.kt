@@ -22,7 +22,7 @@ import com.mi.explorer.data.model.VolumeType
 import com.mi.explorer.ui.theme.MiOrange
 
 /**
- * Modern, compact Xiaomi MIUI / HyperOS storage card.
+ * Modern, compact storage card.
  * Uses an efficient horizontal layout with inline progress bar and volume switcher,
  * minimizing vertical screen footprint so files and content stay prominently in view.
  */
@@ -125,7 +125,7 @@ fun StorageCard(
 
                 Spacer(modifier = Modifier.height(4.dp))
 
-                // Inline Slim MIUI-styled Progress Bar
+                // Inline Slim Progress Bar
                 Row(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
@@ -192,7 +192,7 @@ fun StorageCard(
 
             Spacer(modifier = Modifier.width(10.dp))
 
-            // Signature Compact MIUI "Clean" Pill Button
+            // Compact "Clean" Pill Button
             Surface(
                 modifier = Modifier
                     .clip(RoundedCornerShape(14.dp))

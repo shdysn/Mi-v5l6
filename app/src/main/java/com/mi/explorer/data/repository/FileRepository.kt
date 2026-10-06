@@ -50,7 +50,7 @@ class FileRepository(private val context: Context) {
             if (ext.exists() && ext.canRead()) {
                 ext
             } else {
-                val sampleDir = File(context.filesDir, "MiExplorer")
+                val sampleDir = File(context.filesDir, "CentExplorer")
                 if (sampleDir.exists()) sampleDir else context.filesDir
             }
         } catch (e: Exception) {
@@ -183,16 +183,16 @@ class FileRepository(private val context: Context) {
         }
     }
 
-    private fun ensureMiExplorerSampleData() {
+    private fun ensureCentExplorerSampleData() {
         try {
-            val base = File(context.filesDir, "MiExplorer")
+            val base = File(context.filesDir, "CentExplorer")
             if (!base.exists()) {
                 base.mkdirs()
-                File(base, "Welcome_Mi_Explorer.txt").writeText(
+                File(base, "Welcome_Cent_Explorer.txt").writeText(
                     """
-                    Welcome to Mi Explorer!
+                    Welcome to Cent File Manager!
                     
-                    Inspired by Xiaomi MIUI / HyperOS File Manager:
+                    Modern, Fast & Clean Android File Manager:
                     • Recent tab: Quick access to recently created, captured, or downloaded items.
                     • Storage tab: Clear overview of used space with 8 fast category shortcuts.
                     • Deep Clean: Scan for app cache, residual junk, obsolete APKs, and large files.
@@ -200,20 +200,20 @@ class FileRepository(private val context: Context) {
                     • 100% Free: No ads, no subscriptions, fast and lightweight.
                     """.trimIndent()
                 )
-                File(base, "MIUI_Tips.md").writeText(
+                File(base, "Cent_Tips.md").writeText(
                     """
-                    # MIUI File Manager Tips
+                    # Cent File Manager Tips
                     - Switch between Recent and Storage using the top tabs.
-                    - Tap the Cleaner button to free up gigabytes of space in seconds.
+                    - Tap the Cleaner button to free up space in seconds.
                     - Use FTP server mode to transfer files directly to your PC without cables!
                     """.trimIndent()
                 )
                 val docs = File(base, "Documents")
                 docs.mkdirs()
-                File(docs, "Project_Roadmap.txt").writeText("1. Modern Compose UI\n2. MIUI-inspired Squircles\n3. Zero Ads\n4. Lightning fast\n")
+                File(docs, "Project_Roadmap.txt").writeText("1. Modern Compose UI\n2. Modern Smooth Squircles\n3. Zero Ads\n4. Lightning fast\n")
 
                 val musicDir = File(base, "Music").apply { mkdirs() }
-                val sampleAudio = File(musicDir, "Mi_Melody_Sample.wav")
+                val sampleAudio = File(musicDir, "Cent_Melody_Sample.wav")
                 if (!sampleAudio.exists()) {
                     createSampleWavFile(sampleAudio)
                 }
@@ -439,7 +439,7 @@ class FileRepository(private val context: Context) {
                 Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DCIM),
                 Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES),
                 Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOCUMENTS),
-                File(context.filesDir, "MiExplorer")
+                File(context.filesDir, "CentExplorer")
             ).filter { it.exists() && it.canRead() }
 
             for (dir in keyDirs) {
@@ -604,23 +604,23 @@ class FileRepository(private val context: Context) {
                 Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS),
                 File(Environment.getExternalStorageDirectory(), "WhatsApp/Media/WhatsApp Video"),
                 File(Environment.getExternalStorageDirectory(), "Android/media/com.whatsapp/WhatsApp/Media/WhatsApp Video"),
-                File(context.filesDir, "MiExplorer/Videos"),
-                File(context.filesDir, "MiExplorer")
+                File(context.filesDir, "CentExplorer/Videos"),
+                File(context.filesDir, "CentExplorer")
             )
             FileCategory.AUDIO -> listOfNotNull(
                 Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MUSIC),
                 Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS),
                 File(Environment.getExternalStorageDirectory(), "Music"),
                 File(Environment.getExternalStorageDirectory(), "Audio"),
-                File(context.filesDir, "MiExplorer/Music"),
-                File(context.filesDir, "MiExplorer")
+                File(context.filesDir, "CentExplorer/Music"),
+                File(context.filesDir, "CentExplorer")
             )
             FileCategory.DOCUMENT -> listOfNotNull(
                 Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOCUMENTS),
                 Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS),
                 File(Environment.getExternalStorageDirectory(), "Documents"),
                 File(Environment.getExternalStorageDirectory(), "Download"),
-                File(context.filesDir, "MiExplorer")
+                File(context.filesDir, "CentExplorer")
             )
             FileCategory.APK -> listOfNotNull(
                 Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS),
@@ -634,16 +634,16 @@ class FileRepository(private val context: Context) {
                 File(Environment.getExternalStorageDirectory(), "Apks"),
                 File(Environment.getExternalStorageDirectory(), "Apps"),
                 File(Environment.getExternalStorageDirectory(), "ADM"),
-                File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), "MiExplorer/APKs"),
-                File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), "MiExplorer/Backup"),
-                File(context.filesDir, "MiExplorer/APKs"),
-                File(context.filesDir, "MiExplorer/Backup"),
+                File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), "CentExplorer/APKs"),
+                File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), "CentExplorer/Backup"),
+                File(context.filesDir, "CentExplorer/APKs"),
+                File(context.filesDir, "CentExplorer/Backup"),
                 Environment.getExternalStorageDirectory()
             )
             else -> listOfNotNull(
                 Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS),
                 Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOCUMENTS),
-                File(context.filesDir, "MiExplorer")
+                File(context.filesDir, "CentExplorer")
             )
         }
 
@@ -971,7 +971,7 @@ class FileRepository(private val context: Context) {
         val pictures = File(root, "Pictures")
         val movies = File(root, "Movies")
         val download = downloadsDirectory
-        val sampleBase = File(context.getExternalFilesDir(null) ?: context.filesDir, "MiExplorer")
+        val sampleBase = File(context.getExternalFilesDir(null) ?: context.filesDir, "CentExplorer")
 
         fun createEntry(dir: File, hint: String): SocialFolderEntry? {
             if (!dir.exists() || !dir.isDirectory) return null

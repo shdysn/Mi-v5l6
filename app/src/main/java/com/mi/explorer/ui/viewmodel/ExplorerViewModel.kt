@@ -1245,7 +1245,7 @@ class ExplorerViewModel(application: Application) : AndroidViewModel(application
             val res = appsRepository.backupAppApk(app)
             res.fold(
                 onSuccess = { dest ->
-                    showMessage("Saved ${app.appName} to Downloads/MiExplorer/Backup")
+                    showMessage("Saved ${app.appName} to Downloads/CentExplorer/Backup")
                     loadAppBackups()
                     loadApps()
                     loadStorageApks()
@@ -2543,12 +2543,12 @@ class ExplorerViewModel(application: Application) : AndroidViewModel(application
         viewModelScope.launch {
             showMessage("Downloading ${remoteFile.name}...")
             val downloadsDir = android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_DOWNLOADS)
-            val targetDir = File(downloadsDir, "MiExplorer/Network").apply { mkdirs() }
+            val targetDir = File(downloadsDir, "CentExplorer/Network").apply { mkdirs() }
             val targetFile = File(targetDir, remoteFile.name)
             val res = networkStorageRepository.downloadRemoteFile(drive, remoteFile, targetFile)
             res.fold(
                 onSuccess = { file ->
-                    showMessage("Saved to Downloads/MiExplorer/Network/${file.name}")
+                    showMessage("Saved to Downloads/CentExplorer/Network/${file.name}")
                     refreshCurrentDirectory()
                 },
                 onFailure = { err ->

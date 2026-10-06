@@ -101,7 +101,7 @@ fun FastShareScreen(
                 title = {
                     Column {
                         Text(
-                            text = "Mi Fast Share",
+                            text = "Cent Fast Share",
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.SemiBold
                         )

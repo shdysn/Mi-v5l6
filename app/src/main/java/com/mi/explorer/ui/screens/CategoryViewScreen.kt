@@ -337,13 +337,13 @@ fun CategoryViewScreen(
 
     openWithTarget?.let { target ->
         val builtInLabel = when (target.category) {
-            FileCategory.IMAGE -> "View in Mi Gallery (Built-in)"
+            FileCategory.IMAGE -> "View in Cent Gallery (Built-in)"
             FileCategory.CODE, FileCategory.DOCUMENT -> {
                 if (target.extension in listOf("txt", "md", "json", "xml", "kt", "java", "py", "sh", "html", "css", "js", "log", "csv")) {
-                    "Edit in Mi Text Editor (Built-in)"
+                    "Edit in Cent Text Editor (Built-in)"
                 } else null
             }
-            FileCategory.ARCHIVE -> "Inspect & Extract with Mi Zip"
+            FileCategory.ARCHIVE -> "Inspect & Extract with Cent Zip"
             FileCategory.APK -> "Install / Inspect Package (Built-in)"
             else -> null
         }

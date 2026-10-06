@@ -99,7 +99,7 @@ fun MiToolsBottomSheet(
         ),
         ToolItem(
             id = "fast_share",
-            title = "Mi Fast Share",
+            title = "Cent Fast Share",
             subtitle = "Offline Wi-Fi transfer",
             icon = Icons.Default.WifiTethering,
             iconColor = Color(0xFF10B981),

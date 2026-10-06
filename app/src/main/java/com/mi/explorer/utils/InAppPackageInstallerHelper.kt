@@ -233,7 +233,7 @@ object InAppPackageInstallerHelper {
                 FileOpener.requestInstallUnknownAppsPermission(context)
             }
             return@withContext Result.failure(
-                SecurityException("Please allow 'Install unknown apps' permission for Mi Explorer in Settings, then try again.")
+                SecurityException("Please allow 'Install unknown apps' permission for Cent File Manager in Settings, then try again.")
             )
         }
 

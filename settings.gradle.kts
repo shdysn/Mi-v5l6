@@ -13,5 +13,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "Mi Explorer"
+rootProject.name = "Cent File Manager"
 include(":app")

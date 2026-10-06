@@ -209,7 +209,7 @@ fun NetworkDrivesScreen(
                                     fontWeight = FontWeight.Bold
                                 )
                                 Text(
-                                    text = "Access your PC shared folders (SMB), NAS, Nextcloud, or WebDAV servers directly inside Mi Explorer.",
+                                    text = "Access your PC shared folders (SMB), NAS, Nextcloud, or WebDAV servers directly inside Cent File Manager.",
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )

@@ -199,7 +199,7 @@ class FastShareRepository(private val context: Context) {
         <head>
             <meta charset="utf-8">
             <meta name="viewport" content="width=device-width, initial-scale=1">
-            <title>Mi Share — Direct P2P Transfer</title>
+            <title>Cent Share — Direct P2P Transfer</title>
             <style>
                 body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #0f172a; color: #f8fafc; margin: 0; padding: 24px; }
                 .container { max-width: 600px; margin: 0 auto; }
@@ -215,8 +215,8 @@ class FastShareRepository(private val context: Context) {
         </head>
         <body>
             <div class="container">
-                <h1>⚡ Mi Fast Share</h1>
-                <p>High-speed offline transfer from Mi Explorer</p>
+                <h1>⚡ Cent Fast Share</h1>
+                <p>High-speed offline transfer from Cent File Manager</p>
                 <div>
                     ${if (files.isEmpty()) "<p>No files selected for transfer.</p>" else rows.toString()}
                 </div>

@@ -218,7 +218,7 @@ class WebShareServer(private val context: Context, private val port: Int = 8080)
             <head>
                 <meta charset="UTF-8">
                 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-                <title>Mi Explorer - Wireless Web Share</title>
+                <title>Cent File Manager - Wireless Web Share</title>
                 <style>
                     :root {
                         --primary: #FF6700;
@@ -258,7 +258,7 @@ class WebShareServer(private val context: Context, private val port: Int = 8080)
             <body>
                 <div class="header">
                     <div class="brand">
-                        <span class="badge">Mi Web Share</span>
+                        <span class="badge">Cent Web Share</span>
                         <h2>Wireless File Drop</h2>
                     </div>
                     <span style="font-size: 13px; color: var(--text-muted);">$ip:$port</span>

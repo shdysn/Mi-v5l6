@@ -91,7 +91,7 @@ object FileOpener {
         if (!canInstallUnknownApps(context)) {
             Toast.makeText(
                 context,
-                "Please allow 'Install unknown apps' permission for Mi Explorer",
+                "Please allow 'Install unknown apps' permission for Cent File Manager",
                 Toast.LENGTH_LONG
             ).show()
             requestInstallUnknownAppsPermission(context)
@@ -113,7 +113,6 @@ object FileOpener {
             val preferredInstallers = listOf(
                 "com.google.android.packageinstaller",
                 "com.android.packageinstaller",
-                "com.miui.packageinstaller",
                 "com.samsung.android.packageinstaller",
                 "com.coloros.phonemanager"
             )

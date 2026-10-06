@@ -2767,13 +2767,13 @@ private fun captureVideoScreenshot(
             retriever.release()
             if (bmp != null) {
                 val picturesDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES)
-                val miDir = File(picturesDir, "MiExplorer_Screenshots").apply { mkdirs() }
+                val miDir = File(picturesDir, "CentExplorer_Screenshots").apply { mkdirs() }
                 val timeStamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date())
                 val outFile = File(miDir, "MX_SHOT_${timeStamp}.jpg")
                 FileOutputStream(outFile).use { fos ->
                     bmp.compress(Bitmap.CompressFormat.JPEG, 95, fos)
                 }
-                onResult("Saved frame to Pictures/MiExplorer_Screenshots/${outFile.name}")
+                onResult("Saved frame to Pictures/CentExplorer_Screenshots/${outFile.name}")
             } else {
                 onResult("Captured frame at ${formatTime(currentPosMs)}")
             }

@@ -76,10 +76,10 @@ class AppsRepository(private val context: Context) {
             File(extStorage, "Telegram/Telegram Documents"),
             File(extStorage, "WhatsApp/Media/WhatsApp Documents"),
             File(extStorage, "Apks"),
-            File(context.filesDir, "MiExplorer/APKs"),
-            File(context.filesDir, "MiExplorer/Backup"),
-            File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), "MiExplorer/Backup"),
-            File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), "MiExplorer/APKs")
+            File(context.filesDir, "CentExplorer/APKs"),
+            File(context.filesDir, "CentExplorer/Backup"),
+            File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), "CentExplorer/Backup"),
+            File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), "CentExplorer/APKs")
         ).filter { it.exists() && it.canRead() }
 
         for (dir in standardFolders.distinct()) {
@@ -144,13 +144,13 @@ class AppsRepository(private val context: Context) {
     private fun ensureSampleApk(results: MutableList<File>, seenPaths: MutableSet<String>) {
         try {
             val publicDownloads = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
-            val publicDir = File(publicDownloads, "MiExplorer/APKs").apply { mkdirs() }
-            val internalDir = File(context.filesDir, "MiExplorer/APKs").apply { mkdirs() }
+            val publicDir = File(publicDownloads, "CentExplorer/APKs").apply { mkdirs() }
+            val internalDir = File(context.filesDir, "CentExplorer/APKs").apply { mkdirs() }
             val myAppSource = File(context.applicationInfo.sourceDir)
 
             if (myAppSource.exists()) {
                 val publicApk = try {
-                    val target = File(publicDir, "MiExplorer_v1.0.apk")
+                    val target = File(publicDir, "CentExplorer_v1.0.apk")
                     if (!target.exists() || target.length() == 0L) {
                         myAppSource.copyTo(target, overwrite = true)
                     }
@@ -164,7 +164,7 @@ class AppsRepository(private val context: Context) {
                         results.add(publicApk)
                     }
                 } else {
-                    val internalApk = File(internalDir, "MiExplorer_v1.0.apk")
+                    val internalApk = File(internalDir, "CentExplorer_v1.0.apk")
                     if (!internalApk.exists() || internalApk.length() == 0L) {
                         myAppSource.copyTo(internalApk, overwrite = true)
                     }
@@ -180,10 +180,10 @@ class AppsRepository(private val context: Context) {
 
     fun getBackupDirectory(): File {
         val candidates = listOfNotNull(
-            Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)?.let { File(it, "MiExplorer/Backup") },
-            context.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS)?.let { File(it, "MiExplorer/Backup") },
+            Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)?.let { File(it, "CentExplorer/Backup") },
+            context.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS)?.let { File(it, "CentExplorer/Backup") },
             context.getExternalFilesDir(null)?.let { File(it, "Backup") },
-            File(context.filesDir, "MiExplorer/Backup")
+            File(context.filesDir, "CentExplorer/Backup")
         )
         for (dir in candidates) {
             try {
@@ -492,9 +492,9 @@ class AppsRepository(private val context: Context) {
     suspend fun getAppBackups(): List<AppBackupGroup> = withContext(Dispatchers.IO) {
         val backupDirs = listOfNotNull(
             getBackupDirectory(),
-            Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)?.let { File(it, "MiExplorer/Backup") },
-            context.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS)?.let { File(it, "MiExplorer/Backup") },
-            File(context.filesDir, "MiExplorer/Backup"),
+            Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)?.let { File(it, "CentExplorer/Backup") },
+            context.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS)?.let { File(it, "CentExplorer/Backup") },
+            File(context.filesDir, "CentExplorer/Backup"),
             File(context.filesDir, "Backup")
         ).distinct().filter { it.exists() && it.canRead() }
 
@@ -515,7 +515,7 @@ class AppsRepository(private val context: Context) {
         if (backupFiles.isEmpty()) {
             try {
                 val myApp = AppInfoItem(
-                    appName = "Mi Explorer",
+                    appName = "Cent File Manager",
                     packageName = context.packageName,
                     versionName = "1.0.0",
                     versionCode = 1L,

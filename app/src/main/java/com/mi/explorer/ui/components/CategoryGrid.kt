@@ -57,7 +57,7 @@ private val categoryRow3 = listOf(
 )
 
 /**
- * Modern 4x3 Category Grid inspired by Xiaomi MIUI / HyperOS and Google Files.
+ * Modern 4x3 Category Grid.
  * Includes media categories, Status Saver, Favourites, Cleaner, and Utilities.
  */
 @Composable

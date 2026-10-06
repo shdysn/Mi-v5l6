@@ -1,13 +1,13 @@
-# Mi Explorer (Xiaomi MIUI / HyperOS File Manager)
+# Cent File Manager
 
-A modern, high-performance Android File Explorer inspired by Xiaomi's iconic **Mi File Manager (MIUI / HyperOS)**, built from scratch using Kotlin, Jetpack Compose, Material Design 3, and Coroutines.
+A modern, high-performance Android File Explorer built from scratch using Kotlin, Jetpack Compose, Material Design 3, and Coroutines.
 
 ## Key Features
 
 - **Dual-Tab Experience**:
   - **Recent Tab**: Clean chronological timeline of recently created, captured, and downloaded files grouped into "Today", "Yesterday", and "Earlier", with quick filter chips (All, Images, Docs, APKs, Archives, Music).
   - **Storage Tab**: Streamlined storage capacity overview ("Internal storage: X GB free of Y GB") with quick clean shortcut.
-- **8 Signature MIUI Category Squircles**:
+- **8 Signature Category Squircles**:
   - **Images** (Cyan/Blue)
   - **Videos** (Vibrant Violet)
   - **Docs** (Warm Yellow)
@@ -40,5 +40,5 @@ A modern, high-performance Android File Explorer inspired by Xiaomi's iconic **M
 - **Target Runtime**: Android (JDK 21, Android SDK 36, AGP 9.1.1, Gradle 9.3.1)
 - **UI Framework**: Jetpack Compose with Material Design 3
 - **Language**: Kotlin 2.2.21
-- **Package Name / Application ID**: `com.pkstudio.miexplorer.app`
+- **Package Name / Application ID**: `com.pkstudio.ctexplorer.app`
 - **Namespace**: `com.mi.explorer`

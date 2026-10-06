@@ -37,7 +37,7 @@ import com.mi.explorer.ui.components.ChecksumDialog
 import com.mi.explorer.ui.components.MiFullAudioPlayerSheet
 import com.mi.explorer.ui.components.MiMiniAudioBar
 import com.mi.explorer.ui.screens.*
-import com.mi.explorer.ui.theme.MiExplorerTheme
+import com.mi.explorer.ui.theme.CentExplorerTheme
 import com.mi.explorer.ui.viewmodel.ExplorerViewModel
 import com.mi.explorer.ui.viewmodel.Screen
 import com.mi.explorer.utils.FileOpener
@@ -54,7 +54,7 @@ class MainActivity : ComponentActivity() {
 
         setContent {
             val isAmoled by viewModel.isAmoledMode.collectAsStateWithLifecycle()
-            MiExplorerTheme(amoledMode = isAmoled) {
+            CentExplorerTheme(amoledMode = isAmoled) {
                 MiMainApp(viewModel = viewModel)
             }
         }
@@ -418,7 +418,7 @@ fun MiMainApp(viewModel: ExplorerViewModel) {
             modifier = Modifier
                 .fillMaxSize()
                 .then(if (isVideoScreen) Modifier else Modifier.padding(innerPadding)),
-            label = "MiScreenTransition"
+            label = "CentScreenTransition"
         ) { screen ->
             when (screen) {
                 Screen.MAIN -> MainScreen(viewModel = viewModel)

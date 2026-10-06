@@ -283,7 +283,7 @@ fun AppManagerScreen(
                 .fillMaxSize()
                 .padding(innerPadding)
         ) {
-            // 3-Tab MIUI Header: Cloner/Installed, Downgrade Hub, Storage APKs
+            // 3-Tab Header: Cloner/Installed, Downgrade Hub, Storage APKs
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -1011,7 +1011,7 @@ private fun InstalledAppClonerRow(
                             }
                         )
                         DropdownMenuItem(
-                            text = { Text("Send via Mi Fast Share") },
+                            text = { Text("Send via Cent Fast Share") },
                             leadingIcon = { Icon(Icons.Default.WifiTethering, contentDescription = null, tint = Color(0xFF10B981)) },
                             onClick = {
                                 showActionMenu = false
@@ -1241,7 +1241,7 @@ private fun BackupVersionRow(
                         }
                     )
                     DropdownMenuItem(
-                        text = { Text("Send via Mi Fast Share") },
+                        text = { Text("Send via Cent Fast Share") },
                         leadingIcon = { Icon(Icons.Default.WifiTethering, contentDescription = null, tint = Color(0xFF10B981)) },
                         onClick = {
                             showMenu = false
@@ -1389,7 +1389,7 @@ private fun StorageApkRow(
                         }
                     )
                     DropdownMenuItem(
-                        text = { Text("Send via Mi Fast Share") },
+                        text = { Text("Send via Cent Fast Share") },
                         leadingIcon = { Icon(Icons.Default.WifiTethering, contentDescription = null, tint = Color(0xFF10B981)) },
                         onClick = {
                             showMenu = false

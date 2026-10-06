@@ -52,7 +52,7 @@ data class FileIconDescriptor(
 
 /**
  * Centralized helper for determining and displaying appropriate Material Design 3 icons,
- * colors, and type badges for all file and folder types in Mi Explorer.
+ * colors, and type badges for all file and folder types in Cent File Manager.
  */
 object FileIconHelper {
 
@@ -139,7 +139,7 @@ object FileIconHelper {
             lower.contains("wechat") || lower.contains("weixin") -> FileIconDescriptor(Icons.Default.Forum, Color(0xFF07C160), categoryLabel = "WeChat")
             lower.contains("shareme") || lower.contains("shareit") || lower.contains("midrop") -> FileIconDescriptor(Icons.Default.WifiTethering, Color(0xFF0284C7), categoryLabel = "ShareMe")
 
-            // Standard Android / MIUI Folders
+            // Standard Android Folders
             lower == "download" || lower == "downloads" -> FileIconDescriptor(Icons.Default.FileDownload, Color(0xFF2563EB), categoryLabel = "Downloads")
             lower == "dcim" || lower == "camera" -> FileIconDescriptor(Icons.Default.PhotoCamera, Color(0xFF7C3AED), categoryLabel = "Camera")
             lower.contains("pictures") || lower.contains("photos") || lower.contains("screenshots") -> FileIconDescriptor(Icons.Default.PhotoLibrary, Color(0xFF059669), categoryLabel = "Photos")
@@ -450,7 +450,7 @@ object FileIconHelper {
     // =========================================================================
 
     /**
-     * Standard MIUI / Material 3 squircle icon badge for a FileItem.
+     * Standard Material 3 squircle icon badge for a FileItem.
      * Automatically loads and displays real thumbnail previews for Photos, Videos, and APKs,
      * while showing distinct Material Design 3 icons and format chips for all other files.
      */
@@ -489,7 +489,7 @@ object FileIconHelper {
     }
 
     /**
-     * Standard MIUI / Material 3 squircle icon badge for a java.io.File.
+     * Standard Material 3 squircle icon badge for a java.io.File.
      */
     @Composable
     fun FileIconBadge(
@@ -528,7 +528,7 @@ object FileIconHelper {
     }
 
     /**
-     * Standard MIUI / Material 3 squircle icon badge for a FileIconDescriptor.
+     * Standard Material 3 squircle icon badge for a FileIconDescriptor.
      * Renders either the media thumbnail or the tinted Material icon squircle.
      */
     @Composable

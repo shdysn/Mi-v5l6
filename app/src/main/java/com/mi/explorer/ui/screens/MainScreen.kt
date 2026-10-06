@@ -377,7 +377,7 @@ fun MainScreen(
                     )
                 }
                 MiTab.STORAGE -> {
-                    // Storage Tab Content (MIUI Categories & Folder Navigation)
+                    // Storage Tab Content (Cent Categories & Folder Navigation)
                     StorageTabContent(
                         storageSpace = storageSpace,
                         storageState = storageState,
@@ -432,7 +432,7 @@ fun MainScreen(
                         onTimeMachineClick = { viewModel.openTimeMachine() },
                         onPinWidgetClick = {
                             val ok = com.mi.explorer.utils.ShortcutHelper.requestPinStorageWidget(context)
-                            viewModel.showMessage(if (ok) "Home Screen Storage Widget prompt opened!" else "Long-press Home Screen -> Widgets -> Mi Explorer")
+                            viewModel.showMessage(if (ok) "Home Screen Storage Widget prompt opened!" else "Long-press Home Screen -> Widgets -> Cent File Manager")
                         },
                         onBatchRename = { showBatchRenameDialog = true },
                         onNavigateTo = { viewModel.loadDirectory(it, addToHistory = true) },
@@ -768,13 +768,13 @@ fun MainScreen(
 
     openWithTarget?.let { target ->
         val builtInLabel = when (target.category) {
-            FileCategory.IMAGE -> "View in Mi Gallery (Built-in)"
+            FileCategory.IMAGE -> "View in Cent Gallery (Built-in)"
             FileCategory.CODE, FileCategory.DOCUMENT -> {
                 if (target.extension in listOf("txt", "md", "json", "xml", "kt", "java", "py", "sh", "html", "css", "js", "log", "csv")) {
-                    "Edit in Mi Text Editor (Built-in)"
+                    "Edit in Cent Text Editor (Built-in)"
                 } else null
             }
-            FileCategory.ARCHIVE -> "Inspect & Extract with Mi Zip"
+            FileCategory.ARCHIVE -> "Inspect & Extract with Cent Zip"
             FileCategory.APK -> "Install / Inspect Package (Built-in)"
             else -> null
         }
@@ -848,7 +848,7 @@ fun MainScreen(
             onSocialClick = { viewModel.openSocialHub() },
             onPinWidgetClick = {
                 val ok = com.mi.explorer.utils.ShortcutHelper.requestPinStorageWidget(context)
-                viewModel.showMessage(if (ok) "Home Screen Storage Widget prompt opened!" else "Long-press Home Screen -> Widgets -> Mi Explorer")
+                viewModel.showMessage(if (ok) "Home Screen Storage Widget prompt opened!" else "Long-press Home Screen -> Widgets -> Cent File Manager")
             },
             onWebShareClick = { viewModel.openWebShare() },
             onStatusSaverClick = { viewModel.openStatusSaver() },
@@ -1460,7 +1460,7 @@ fun StorageTabContent(
                 )
             }
 
-            // 2. 12-tile MIUI Category Grid (with Media, Status Saver, Favourites, Cleaner, and Utilities)
+            // 2. 12-tile Cent Category Grid (with Media, Status Saver, Favourites, Cleaner, and Utilities)
             item {
                 CategoryGrid(
                     onCategoryClick = onCategoryClick,

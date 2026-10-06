@@ -39,12 +39,12 @@ class FtpServer(
                 }
             }.apply {
                 isDaemon = true
-                name = "MiFtpServerThread"
+                name = "CentFtpServerThread"
                 start()
             }
             return true
         } catch (e: Exception) {
-            Log.e("MiFtpServer", "Failed to start FTP server on port $port", e)
+            Log.e("CentFtpServer", "Failed to start FTP server on port $port", e)
             stop()
             return false
         }
@@ -80,7 +80,7 @@ class FtpServer(
                     writer.flush()
                 }
 
-                sendResponse(220, "Mi Explorer FTP Server ready.")
+                sendResponse(220, "Cent File Manager FTP Server ready.")
 
                 while (isRunning.get() && !socket.isClosed) {
                     val line = reader.readLine() ?: break
@@ -395,7 +395,7 @@ class FtpServer(
             }
         }.apply {
             isDaemon = true
-            name = "MiFtpClientSession"
+            name = "CentFtpClientSession"
             start()
         }
     }

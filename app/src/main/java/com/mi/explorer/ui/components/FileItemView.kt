@@ -74,7 +74,7 @@ fun MiFileRow(
         verticalAlignment = Alignment.CenterVertically
     ) {
         val isMedia = item.category == FileCategory.IMAGE || item.category == FileCategory.VIDEO
-        // MIUI Squircle icon badge with Material Icon and format chip (larger for images & videos)
+        // Smooth squircle icon badge with Material Icon and format chip (larger for images & videos)
         FileIconHelper.FileIconBadge(
             item = item,
             size = if (isMedia) 54.dp else 44.dp,
@@ -383,7 +383,7 @@ fun FileActionDropdownMenu(
 }
 
 /**
- * Xiaomi MIUI / HyperOS styled Grid Item for files and folders.
+ * Cent Styled Grid Item for files and folders.
  * Features a large centered squircle badge with format chips, two-line title,
  * and quick-access kebab menu, making it ideal for visual browsing.
  */

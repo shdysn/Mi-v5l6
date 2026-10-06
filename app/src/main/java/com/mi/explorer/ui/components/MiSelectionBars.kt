@@ -45,7 +45,7 @@ import androidx.compose.ui.unit.sp
 import com.mi.explorer.data.model.FileItem
 
 /**
- * Top bar displayed when 1 or more files are selected, matching MIUI / HyperOS File Manager.
+ * Top bar displayed when 1 or more files are selected.
  */
 @Composable
 fun MiSelectionTopBar(
@@ -135,7 +135,7 @@ fun MiSelectionTopBar(
 }
 
 /**
- * Bottom action bar shown in selection mode (Send, Move, Delete, More), matching MIUI / HyperOS File Manager.
+ * Bottom action bar shown in selection mode (Send, Move, Delete, More).
  */
 @Composable
 fun MiSelectionBottomBar(

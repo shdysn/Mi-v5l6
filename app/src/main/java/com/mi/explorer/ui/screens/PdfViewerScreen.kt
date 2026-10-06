@@ -205,7 +205,7 @@ fun PdfViewerScreen(
                                 coroutineScope.launch {
                                     val saved = exportPdfPageAsImage(pageBmp, file.nameWithoutExtension, currentPageIndex + 1)
                                     if (saved != null) {
-                                        viewModel.showMessage("Exported Page ${currentPageIndex + 1} to Pictures/MiExplorer_PDF/${saved.name}")
+                                        viewModel.showMessage("Exported Page ${currentPageIndex + 1} to Pictures/CentExplorer_PDF/${saved.name}")
                                     } else {
                                         viewModel.showMessage("Failed to export page")
                                     }
@@ -482,7 +482,7 @@ private suspend fun exportPdfPageAsImage(
 ): File? = withContext(Dispatchers.IO) {
     try {
         val picturesDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES)
-        val outDir = File(picturesDir, "MiExplorer_PDF").apply { mkdirs() }
+        val outDir = File(picturesDir, "CentExplorer_PDF").apply { mkdirs() }
         val outFile = File(outDir, "${pdfBaseName}_page_${pageNumber}.jpg")
         FileOutputStream(outFile).use { fos ->
             pageBitmap.compress(Bitmap.CompressFormat.JPEG, 95, fos)

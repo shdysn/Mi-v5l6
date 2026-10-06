@@ -44,7 +44,7 @@ val DarkColorScheme = PureWhiteColorScheme
 val AmoledColorScheme = PureWhiteColorScheme
 
 @Composable
-fun MiExplorerTheme(
+fun CentExplorerTheme(
     darkTheme: Boolean = false,
     amoledMode: Boolean = false,
     content: @Composable () -> Unit

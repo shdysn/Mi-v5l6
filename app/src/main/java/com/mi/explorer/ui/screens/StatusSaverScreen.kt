@@ -86,7 +86,7 @@ fun StatusSaverScreen(
                 .fillMaxSize()
                 .padding(innerPadding)
         ) {
-            // Xiaomi MIUI styled Tab Bar
+            // Cent styled Tab Bar
             ScrollableTabRow(
                 selectedTabIndex = selectedTab.ordinal,
                 edgePadding = 16.dp,

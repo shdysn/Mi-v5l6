@@ -60,7 +60,7 @@ fun MiTopHeader(
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // Xiaomi MIUI styled Tab Selector (Recent vs Storage)
+            // Tab Selector (Recent vs Storage)
             Row(
                 modifier = Modifier
                     .clip(RoundedCornerShape(24.dp))
@@ -82,7 +82,7 @@ fun MiTopHeader(
                 )
             }
 
-            // Action icons: Dual-Pane, Search, More (Clean, uncluttered MIUI top bar)
+            // Action icons: Dual-Pane, Search, More (Clean, uncluttered top bar)
             Row(verticalAlignment = Alignment.CenterVertically) {
                 IconButton(
                     onClick = onDualPaneToggle,
@@ -172,7 +172,7 @@ fun MiTopHeader(
                             }
                         )
                         DropdownMenuItem(
-                            text = { Text("Mi Fast Share (Wi-Fi P2P)") },
+                            text = { Text("Cent Fast Share (Wi-Fi P2P)") },
                             leadingIcon = { Icon(Icons.Default.WifiTethering, contentDescription = null, tint = Color(0xFF10B981)) },
                             onClick = {
                                 showMoreMenu = false

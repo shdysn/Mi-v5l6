@@ -20,9 +20,9 @@ import javax.crypto.spec.SecretKeySpec
 class VaultRepository(private val context: Context) {
 
     private val prefs: SharedPreferences =
-        context.getSharedPreferences("mi_vault_prefs", Context.MODE_PRIVATE)
+        context.getSharedPreferences("cent_vault_prefs", Context.MODE_PRIVATE)
 
-    private val vaultDir: File = File(context.filesDir, "MiVault_Secure").apply {
+    private val vaultDir: File = File(context.filesDir, "CentVault_Secure").apply {
         if (!exists()) mkdirs()
     }
 

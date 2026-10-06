@@ -25,7 +25,7 @@ object BiometricHelper {
 
     fun authenticate(
         activity: Activity,
-        title: String = "Unlock Mi Vault",
+        title: String = "Unlock Cent Vault",
         subtitle: String = "Use your fingerprint to access private files",
         negativeButtonText: String = "Use PIN",
         onSuccess: () -> Unit,
