@@ -212,9 +212,10 @@ fun ImageViewerScreen(
                             overflow = TextOverflow.Ellipsis
                         )
                         if (state.imageList.isNotEmpty()) {
+                            val currentBmp = bitmap
                             Text(
                                 text = "${state.currentIndex + 1} of ${state.imageList.size}" +
-                                    (if (bitmap != null) " • ${bitmap.width}×${bitmap.height}" else ""),
+                                    (if (currentBmp != null) " • ${currentBmp.width}×${currentBmp.height}" else ""),
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -753,7 +754,8 @@ fun ImageViewerScreen(
     }
 
     // Smart Image Compressor & Resizer Dialog
-    if (showCompressDialog && state.currentFile != null && bitmap != null) {
+    val compressBmp = bitmap
+    if (showCompressDialog && state.currentFile != null && compressBmp != null) {
         val currentFile = state.currentFile!!
         val originalBytes = currentFile.length()
         var selectedQuality by remember { mutableIntStateOf(80) }
@@ -775,15 +777,15 @@ fun ImageViewerScreen(
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     Text(
-                        text = "Original: ${bitmap.width}×${bitmap.height} (${FileItem.formatBytes(originalBytes)})",
+                        text = "Original: ${compressBmp.width}×${compressBmp.height} (${FileItem.formatBytes(originalBytes)})",
                         style = MaterialTheme.typography.bodySmall
                     )
                     Surface(
                         shape = RoundedCornerShape(10.dp),
                         color = Color(0xFF10B981).copy(alpha = 0.14f)
                     ) {
-                        val newW = (bitmap.width * selectedScale).roundToInt()
-                        val newH = (bitmap.height * selectedScale).roundToInt()
+                        val newW = (compressBmp.width * selectedScale).roundToInt()
+                        val newH = (compressBmp.height * selectedScale).roundToInt()
                         Text(
                             text = "Estimated Output: ${newW}×${newH} (~${FileItem.formatBytes(estimatedBytes)})",
                             color = Color(0xFF10B981),
@@ -831,7 +833,7 @@ fun ImageViewerScreen(
                     onClick = {
                         scope.launch {
                             val out = renderAndSaveEditedBitmap(
-                                sourceBitmap = bitmap,
+                                sourceBitmap = compressBmp,
                                 sourceFile = currentFile,
                                 rotationDegrees = rotationDegrees,
                                 flipH = flipHorizontal,
@@ -866,6 +868,7 @@ fun ImageViewerScreen(
 
     if (showInfoDialog && state.currentFile != null) {
         val f = state.currentFile!!
+        val infoBmp = bitmap
         AlertDialog(
             onDismissRequest = { showInfoDialog = false },
             title = { Text("Photo Details") },
@@ -874,8 +877,8 @@ fun ImageViewerScreen(
                     Text(text = "File: ${f.name}", style = MaterialTheme.typography.bodyMedium)
                     Text(text = "Path: ${f.absolutePath}", style = MaterialTheme.typography.bodySmall)
                     Text(text = "Size: ${FileItem.formatBytes(f.length())}", style = MaterialTheme.typography.bodyMedium)
-                    if (bitmap != null) {
-                        Text(text = "Resolution: ${bitmap.width} × ${bitmap.height}", style = MaterialTheme.typography.bodyMedium)
+                    if (infoBmp != null) {
+                        Text(text = "Resolution: ${infoBmp.width} × ${infoBmp.height}", style = MaterialTheme.typography.bodyMedium)
                     }
                 }
             },
