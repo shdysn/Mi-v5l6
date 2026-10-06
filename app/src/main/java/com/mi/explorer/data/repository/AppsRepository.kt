@@ -579,14 +579,39 @@ class AppsRepository(private val context: Context) {
     }
 
     suspend fun getInstalledApps(includeSystemApps: Boolean = false): List<AppInfoItem> = withContext(Dispatchers.IO) {
-        val packages = pm.getInstalledPackages(PackageManager.GET_META_DATA)
+        val packagesMap = mutableMapOf<String, android.content.pm.PackageInfo>()
+
+        // 1. Primary query from visible packages
+        try {
+            pm.getInstalledPackages(PackageManager.GET_META_DATA).forEach { pkg ->
+                packagesMap[pkg.packageName] = pkg
+            }
+        } catch (_: Exception) {}
+
+        // 2. Secondary discovery via LAUNCHER activities matching <queries>
+        try {
+            val mainIntent = android.content.Intent(android.content.Intent.ACTION_MAIN).apply {
+                addCategory(android.content.Intent.CATEGORY_LAUNCHER)
+            }
+            val resolveInfos = pm.queryIntentActivities(mainIntent, 0)
+            for (ri in resolveInfos) {
+                val pkgName = ri.activityInfo?.packageName ?: continue
+                if (!packagesMap.containsKey(pkgName)) {
+                    try {
+                        val pkgInfo = pm.getPackageInfo(pkgName, PackageManager.GET_META_DATA)
+                        packagesMap[pkgName] = pkgInfo
+                    } catch (_: Exception) {}
+                }
+            }
+        } catch (_: Exception) {}
+
         val result = mutableListOf<AppInfoItem>()
 
         // Get backup directory file names for fast backup-status lookup
         val backupDir = getBackupDirectory()
         val backupFileNames = backupDir.listFiles()?.map { it.name.lowercase() }?.toSet() ?: emptySet()
 
-        for (pkg in packages) {
+        for (pkg in packagesMap.values) {
             val appInfo = pkg.applicationInfo ?: continue
             val isSystem = (appInfo.flags and ApplicationInfo.FLAG_SYSTEM) != 0
 
