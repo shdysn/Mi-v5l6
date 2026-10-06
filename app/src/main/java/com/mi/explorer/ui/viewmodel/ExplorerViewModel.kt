@@ -1078,11 +1078,32 @@ class ExplorerViewModel(application: Application) : AndroidViewModel(application
 
     // Image Viewer
     fun openImageViewer(file: File, siblingItems: List<FileItem>) {
-        val imageFiles = siblingItems.filter { it.category == FileCategory.IMAGE }
+        val candidateImages = siblingItems.filter { it.category == FileCategory.IMAGE }
+        val imageFiles = if (candidateImages.size > 1) {
+            candidateImages
+        } else {
+            val categoryImages = _categoryViewState.value.items.filter { it.category == FileCategory.IMAGE }
+            if (categoryImages.size > 1 && categoryImages.any { it.file.absolutePath == file.absolutePath }) {
+                categoryImages
+            } else {
+                val parent = file.parentFile
+                val diskImages = parent?.listFiles()?.filter {
+                    !it.isDirectory && FileItem(it).category == FileCategory.IMAGE
+                }?.map { FileItem(it) }?.sortedBy { it.name } ?: emptyList()
+
+                if (diskImages.size > 1) {
+                    diskImages
+                } else if (candidateImages.isNotEmpty()) {
+                    candidateImages
+                } else {
+                    listOf(FileItem(file))
+                }
+            }
+        }
         val index = imageFiles.indexOfFirst { it.file.absolutePath == file.absolutePath }.coerceAtLeast(0)
         _imageViewerState.value = ImageViewerState(
             currentFile = file,
-            imageList = if (imageFiles.isNotEmpty()) imageFiles else listOf(FileItem(file)),
+            imageList = imageFiles,
             currentIndex = index
         )
         navigateToScreen(Screen.IMAGE_VIEWER)

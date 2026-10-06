@@ -20,6 +20,8 @@ import androidx.compose.foundation.gestures.transformable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -28,6 +30,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -46,11 +49,13 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.mi.explorer.data.model.FileCategory
 import com.mi.explorer.data.model.FileItem
 import com.mi.explorer.ui.components.ExifCleanerDialog
 import com.mi.explorer.ui.theme.MiOrange
 import com.mi.explorer.ui.viewmodel.ExplorerViewModel
 import com.mi.explorer.utils.FileOpener
+import com.mi.explorer.utils.ThumbnailLoader
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -125,17 +130,19 @@ fun ImageViewerScreen(
         pageCount = { pageCount }
     )
 
-    // Sync pager swipe with viewModel
-    LaunchedEffect(pagerState.currentPage) {
-        if (images.isNotEmpty() && pagerState.currentPage in images.indices && pagerState.currentPage != state.currentIndex) {
-            viewModel.setImageIndex(pagerState.currentPage)
+    // Sync external index changes with pager (when opening new image or changing from outside)
+    LaunchedEffect(state.currentFile?.absolutePath, state.currentIndex) {
+        if (state.currentIndex in 0 until pageCount && pagerState.currentPage != state.currentIndex && !pagerState.isScrollInProgress) {
+            pagerState.scrollToPage(state.currentIndex)
         }
     }
 
-    // Sync external index changes with pager
-    LaunchedEffect(state.currentIndex) {
-        if (state.currentIndex in 0 until pageCount && pagerState.currentPage != state.currentIndex) {
-            pagerState.scrollToPage(state.currentIndex)
+    // Sync pager swipe with viewModel ONLY after page has settled (prevents gesture interruptions)
+    LaunchedEffect(pagerState) {
+        snapshotFlow { pagerState.settledPage }.collect { settled ->
+            if (images.isNotEmpty() && settled in images.indices && settled != state.currentIndex) {
+                viewModel.setImageIndex(settled)
+            }
         }
     }
 
@@ -153,12 +160,27 @@ fun ImageViewerScreen(
         panOffset = Offset.Zero
     }
 
-    val bitmap = remember(state.currentFile?.absolutePath, reloadTrigger) {
-        state.currentFile?.let { file ->
+    var bitmap by remember(state.currentFile?.absolutePath, reloadTrigger) {
+        mutableStateOf<Bitmap?>(null)
+    }
+
+    LaunchedEffect(state.currentFile?.absolutePath, reloadTrigger) {
+        val file = state.currentFile ?: return@LaunchedEffect
+        withContext(Dispatchers.IO) {
             try {
-                BitmapFactory.decodeFile(file.absolutePath)
+                val boundsOpts = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                BitmapFactory.decodeFile(file.absolutePath, boundsOpts)
+                val maxDim = maxOf(boundsOpts.outWidth, boundsOpts.outHeight)
+                val sample = if (maxDim > 3072) maxDim / 3072 else 1
+                val decodeOpts = BitmapFactory.Options().apply { inSampleSize = sample.coerceAtLeast(1) }
+                val decoded = BitmapFactory.decodeFile(file.absolutePath, decodeOpts)
+                withContext(Dispatchers.Main) {
+                    bitmap = decoded
+                }
             } catch (_: Exception) {
-                null
+                withContext(Dispatchers.Main) {
+                    bitmap = null
+                }
             }
         }
     }
@@ -453,6 +475,93 @@ fun ImageViewerScreen(
                     }
                 }
 
+                // Horizontal Thumbnail Filmstrip when Edit Studio is closed
+                AnimatedVisibility(visible = !isEditStudioOpen && images.size > 1) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(Color.White)
+                    ) {
+                        val thumbListState = rememberLazyListState()
+                        LaunchedEffect(pagerState.currentPage) {
+                            thumbListState.animateScrollToItem((pagerState.currentPage - 2).coerceAtLeast(0))
+                        }
+
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 16.dp, vertical = 6.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "Photos in collection (${images.size})",
+                                style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Text(
+                                text = "Swipe or tap to browse",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MiOrange
+                            )
+                        }
+
+                        LazyRow(
+                            state = thumbListState,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(56.dp)
+                                .padding(bottom = 6.dp),
+                            contentPadding = PaddingValues(horizontal = 12.dp),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            itemsIndexed(images, key = { index, item -> "thumb_${item.path}_$index" }) { index, item ->
+                                val isSelected = index == pagerState.currentPage
+                                val thumbBitmap by ThumbnailLoader.rememberThumbnailState(
+                                    file = item.file,
+                                    category = FileCategory.IMAGE,
+                                    targetWidth = 140,
+                                    targetHeight = 140
+                                )
+                                Surface(
+                                    shape = RoundedCornerShape(8.dp),
+                                    color = Color(0xFFF3F4F6),
+                                    border = if (isSelected) BorderStroke(2.5.dp, MiOrange) else BorderStroke(0.5.dp, Color(0xFFE5E7EB)),
+                                    modifier = Modifier
+                                        .size(if (isSelected) 50.dp else 44.dp)
+                                        .clip(RoundedCornerShape(8.dp))
+                                        .clickable {
+                                            scope.launch {
+                                                pagerState.animateScrollToPage(index)
+                                            }
+                                        }
+                                ) {
+                                    if (thumbBitmap != null) {
+                                        Image(
+                                            bitmap = thumbBitmap!!.asImageBitmap(),
+                                            contentDescription = item.name,
+                                            contentScale = ContentScale.Crop,
+                                            modifier = Modifier.fillMaxSize()
+                                        )
+                                    } else {
+                                        Box(
+                                            modifier = Modifier.fillMaxSize().background(Color(0xFFE5E7EB)),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Default.Image,
+                                                contentDescription = null,
+                                                tint = Color.Gray,
+                                                modifier = Modifier.size(18.dp)
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
             }
         }
     ) { innerPadding ->
@@ -466,6 +575,7 @@ fun ImageViewerScreen(
             HorizontalPager(
                 state = pagerState,
                 userScrollEnabled = zoomScale <= 1.05f,
+                key = { page -> images.getOrNull(page)?.path ?: page.toString() },
                 modifier = Modifier.fillMaxSize()
             ) { page ->
                 val pageItem = images.getOrNull(page)
@@ -476,21 +586,8 @@ fun ImageViewerScreen(
                     modifier = Modifier
                         .fillMaxSize()
                         .then(
-                            if (isCurrent) {
-                                Modifier
-                                    .transformable(state = transformState)
-                                    .pointerInput(Unit) {
-                                        detectTapGestures(
-                                            onDoubleTap = {
-                                                if (zoomScale > 1.1f) {
-                                                    zoomScale = 1f
-                                                    panOffset = Offset.Zero
-                                                } else {
-                                                    zoomScale = 2.25f
-                                                }
-                                            }
-                                        )
-                                    }
+                            if (isCurrent && zoomScale > 1.05f) {
+                                Modifier.transformable(state = transformState)
                             } else {
                                 Modifier
                             }
@@ -503,7 +600,7 @@ fun ImageViewerScreen(
                         } ?: Modifier.fillMaxSize()
 
                         Image(
-                            bitmap = bitmap.asImageBitmap(),
+                            bitmap = bitmap!!.asImageBitmap(),
                             contentDescription = pageFile?.name,
                             colorFilter = ColorFilter.colorMatrix(composeColorMatrix),
                             modifier = cropModifier
@@ -513,21 +610,42 @@ fun ImageViewerScreen(
                                     rotationZ = rotationDegrees,
                                     translationX = panOffset.x,
                                     translationY = panOffset.y
-                                ),
+                                )
+                                .pointerInput(isCurrent) {
+                                    detectTapGestures(
+                                        onDoubleTap = {
+                                            if (zoomScale > 1.1f) {
+                                                zoomScale = 1f
+                                                panOffset = Offset.Zero
+                                            } else {
+                                                zoomScale = 2.25f
+                                            }
+                                        }
+                                    )
+                                },
                             contentScale = if (selectedCropRatio.ratio != null) ContentScale.Crop else ContentScale.Fit
                         )
                     } else if (pageFile != null) {
-                        val pageBmp = remember(pageFile.absolutePath) {
-                            try {
-                                val opts = BitmapFactory.Options().apply { inSampleSize = 2 }
-                                BitmapFactory.decodeFile(pageFile.absolutePath, opts)
-                            } catch (_: Exception) {
-                                null
+                        var pageBmp by remember(pageFile.absolutePath) { mutableStateOf<Bitmap?>(null) }
+                        LaunchedEffect(pageFile.absolutePath) {
+                            withContext(Dispatchers.IO) {
+                                try {
+                                    val boundsOpts = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                                    BitmapFactory.decodeFile(pageFile.absolutePath, boundsOpts)
+                                    val maxDim = maxOf(boundsOpts.outWidth, boundsOpts.outHeight)
+                                    val sample = if (maxDim > 1920) maxDim / 1920 else 1
+                                    val decodeOpts = BitmapFactory.Options().apply { inSampleSize = sample.coerceAtLeast(1) }
+                                    val decoded = BitmapFactory.decodeFile(pageFile.absolutePath, decodeOpts)
+                                    withContext(Dispatchers.Main) {
+                                        pageBmp = decoded
+                                    }
+                                } catch (_: Exception) {}
                             }
                         }
+
                         if (pageBmp != null) {
                             Image(
-                                bitmap = pageBmp.asImageBitmap(),
+                                bitmap = pageBmp!!.asImageBitmap(),
                                 contentDescription = pageFile.name,
                                 modifier = Modifier.fillMaxSize(),
                                 contentScale = ContentScale.Fit
@@ -537,6 +655,62 @@ fun ImageViewerScreen(
                                 CircularProgressIndicator(color = MiOrange, modifier = Modifier.size(32.dp))
                             }
                         }
+                    }
+                }
+            }
+
+            // Left Navigation Button (Previous Picture)
+            if (pagerState.currentPage > 0 && zoomScale <= 1.05f) {
+                Surface(
+                    shape = CircleShape,
+                    color = Color.Black.copy(alpha = 0.5f),
+                    border = BorderStroke(1.dp, Color.White.copy(alpha = 0.35f)),
+                    modifier = Modifier
+                        .align(Alignment.CenterStart)
+                        .padding(start = 12.dp)
+                        .size(46.dp)
+                        .clip(CircleShape)
+                        .clickable {
+                            scope.launch {
+                                pagerState.animateScrollToPage(pagerState.currentPage - 1)
+                            }
+                        }
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                            contentDescription = "Previous Picture",
+                            tint = Color.White,
+                            modifier = Modifier.size(24.dp)
+                        )
+                    }
+                }
+            }
+
+            // Right Navigation Button (Next Picture)
+            if (pagerState.currentPage < pageCount - 1 && zoomScale <= 1.05f) {
+                Surface(
+                    shape = CircleShape,
+                    color = Color.Black.copy(alpha = 0.5f),
+                    border = BorderStroke(1.dp, Color.White.copy(alpha = 0.35f)),
+                    modifier = Modifier
+                        .align(Alignment.CenterEnd)
+                        .padding(end = 12.dp)
+                        .size(46.dp)
+                        .clip(CircleShape)
+                        .clickable {
+                            scope.launch {
+                                pagerState.animateScrollToPage(pagerState.currentPage + 1)
+                            }
+                        }
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.ArrowForward,
+                            contentDescription = "Next Picture",
+                            tint = Color.White,
+                            modifier = Modifier.size(24.dp)
+                        )
                     }
                 }
             }
